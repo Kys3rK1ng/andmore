@@ -95,4 +95,9 @@ interface IProgressUiProvider extends ILogUiProvider {
      */
     public UserCredentials displayLoginCredentialsPrompt(String title, String message);
 
+    /**
+     * Cancel requested by application
+     */
+	public abstract void cancel();
+
 }

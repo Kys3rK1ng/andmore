@@ -622,14 +622,15 @@ public class ApplicationInfoPage extends WizardPage implements SelectionListener
 
         // If the current target is a preview, explicitly indicate minSdkVersion
         // must be set to this target name.
-        if (target.getVersion().isPreview() && !target.getVersion().equals(mValues.minSdk)) {
+        boolean isTargetMinSdk = target.getVersion().getApiLevel() == Integer.valueOf(mValues.minSdk).intValue();
+        if (target.getVersion().isPreview() && !isTargetMinSdk) {
             return new Status(IStatus.ERROR, AndmoreAndroidPlugin.PLUGIN_ID,
                     String.format(
                             "The SDK target is a preview. Min SDK Version must be set to '%s'.",
                             target.getVersion().getCodename()));
         }
 
-        if (!target.getVersion().equals(mValues.minSdk)) {
+        if (!isTargetMinSdk) {
             return new Status(target.getVersion().isPreview() ? IStatus.ERROR : IStatus.WARNING,
                     AndmoreAndroidPlugin.PLUGIN_ID,
                     "The API level for the selected SDK target does not match the Min SDK Version."

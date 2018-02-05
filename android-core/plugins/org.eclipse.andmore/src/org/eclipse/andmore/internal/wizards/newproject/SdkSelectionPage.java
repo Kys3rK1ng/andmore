@@ -86,7 +86,7 @@ class SdkSelectionPage extends WizardPage implements ITargetChangeListener {
         group.setText("Build Target");
 
         // The selector is created without targets. They are added below in the change listener.
-        mSdkTargetSelector = new SdkTargetSelector(group, null);
+        mSdkTargetSelector = new SdkTargetSelector(group);
 
         mSdkTargetSelector.setSelectionListener(new SelectionAdapter() {
             @Override
@@ -431,16 +431,19 @@ class SdkSelectionPage extends WizardPage implements ITargetChangeListener {
         // Update the sdk target selector with the new targets
 
         // get the targets from the sdk
-        IAndroidTarget[] targets = (Sdk.getCurrent() != null ? Sdk.getCurrent().getTargets() : Collections.<IAndroidTarget>emptySet()).toArray(new IAndroidTarget[0]);
+        IAndroidTarget[] EMPTY_TARGET_ARRAY = new IAndroidTarget[0];
+        IAndroidTarget[] targets = 
+        	Sdk.getCurrent() != null ? 
+        	Sdk.getCurrent().getTargets().toArray(EMPTY_TARGET_ARRAY) : EMPTY_TARGET_ARRAY;
         mSdkTargetSelector.setTargets(targets);
 
         // If there's only one target, select it.
         // This will invoke the selection listener on the selector defined above.
-        if (targets.length <= 1) {
+        if (targets.length == 1) {
             mValues.target = targets[0];
             mSdkTargetSelector.setSelection(mValues.target);
             onSdkTargetModified();
-        } else if (targets != null) {
+        } else if (targets.length > 0) {
             // Pick the highest available platform by default (see issue #17505
             // for related discussion.)
             IAndroidTarget initialTarget = null;

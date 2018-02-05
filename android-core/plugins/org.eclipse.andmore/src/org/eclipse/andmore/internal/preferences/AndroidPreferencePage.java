@@ -16,27 +16,46 @@
 
 package org.eclipse.andmore.internal.preferences;
 
-import com.android.sdklib.IAndroidTarget;
-import com.android.sdkstats.DdmsPreferenceStore;
-import com.android.sdkuilib.widgets.SdkTargetSelector;
+import java.io.File;
+import java.io.IOException;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
-import org.eclipse.andmore.AndmoreAndroidPlugin.CheckSdkErrorHandler;
-import org.eclipse.andmore.internal.sdk.Sdk;
-import org.eclipse.andmore.internal.sdk.Sdk.ITargetChangeListener;
-import org.eclipse.core.resources.IProject;
-import org.eclipse.jface.preference.DirectoryFieldEditor;
+import org.eclipse.andmore.base.SdkSelectionListener;
+import org.eclipse.andmore.base.resources.PluginResourceProvider;
+import org.eclipse.andmore.internal.sdk.AdtConsoleSdkLog;
+import org.eclipse.andmore.sdktool.SdkUserInterfacePlugin;
+import org.eclipse.andmore.sdktool.install.SdkInstaller;
+import org.eclipse.andmore.sdktool.preferences.AndroidSdk;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.jface.dialogs.Dialog;
+import org.eclipse.jface.dialogs.IDialogConstants;
+import org.eclipse.jface.dialogs.IDialogPage;
+import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.jface.preference.FieldEditor;
 import org.eclipse.jface.preference.FieldEditorPreferencePage;
-import org.eclipse.jface.resource.JFaceResources;
+import org.eclipse.jface.preference.IPreferenceStore;
+import org.eclipse.jface.resource.ImageDescriptor;
+import org.eclipse.jface.util.PropertyChangeEvent;
+import org.eclipse.jface.wizard.WizardDialog;
+import org.eclipse.jface.preference.IPersistentPreferenceStore;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.events.SelectionAdapter;
+import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.layout.GridData;
+import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
-import org.eclipse.swt.widgets.Label;
-import org.eclipse.swt.widgets.Text;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPreferencePage;
 
-import java.io.File;
+import com.android.sdkuilib.wizard.SelectSdkWizard;
+import com.android.utils.ILogger;
 
 /**
  * This class represents a preference page that is contributed to the
@@ -52,12 +71,89 @@ import java.io.File;
 public class AndroidPreferencePage extends FieldEditorPreferencePage implements
         IWorkbenchPreferencePage {
 
-    private SdkDirectoryFieldEditor mDirectoryField;
+    private static final String CHANGE_TOOLTIP = "Select existing SDK or install new SDK";
+	private static final String CHANGE_BUTTON_TEXT = "Change...";
+    private static final String UPDATE_TOOLTIP = "Update/install SDK packages";
+	private static final String UPDATE_BUTTON_TEXT = "Update...";
+	private static final String DESCRIPTION = "Android SDK";
+	private static final String SAVE_CHANGES_TITLE = "Change SDK Location";
+	private static final String UPDATE_CHANGES_TITLE = "Update SDK Packages";
+	private static final String SDK_LOC_SAVE_ERROR = "Error saving SDK location";
+//	private static final String SAVE_CHANGES_PROMPT = "Do you want to save this SDK configuration?";
+ 
+	/** Persistent logger */
+	private final ILogger consoleLogger;
+	/** Hides a bundle which contains image files.  */
+    private final PluginResourceProvider resourceProvider;
+    /** Field editor for the SDK directory preference */
+    private SdkLocationFieldEditor directoryField;
+    /** Change button */
+    private Button changeButton;
+    /** Update button */
+    private Button updateButton;
+    private Shell shell;
 
     public AndroidPreferencePage() {
         super(GRID);
-        setPreferenceStore(AndmoreAndroidPlugin.getDefault().getPreferenceStore());
-        setDescription(Messages.AndroidPreferencePage_Title);
+        consoleLogger = new AdtConsoleSdkLog();
+        IPreferenceStore preferenceStore = AndmoreAndroidPlugin.getDefault().getPreferenceStore();
+        setPreferenceStore(preferenceStore);
+        setDescription(DESCRIPTION);
+		resourceProvider = new PluginResourceProvider(){
+
+			@Override
+			public ImageDescriptor descriptorFromPath(String imagePath) {
+				return SdkUserInterfacePlugin.instance().getImageDescriptor("icons/" + imagePath);
+			}};
+		// No default value available, so do not show Defaults button
+		// No editing functions on this page (only in other dialogs), so do not show Apply button
+		noDefaultAndApplyButton();
+	}
+
+	/**
+	 * Save SDK preference store
+	 * @param sdkStore The SDK preference store
+	 * @return flag set true if save completed successfully
+	 */
+	public boolean savePreferences() {
+        synchronized (AdtPrefs.class) {
+            try {
+            	((IPersistentPreferenceStore)getPreferenceStore()).save();
+            	return true;
+            }
+            catch (IOException e) {
+            	consoleLogger.error(e, SDK_LOC_SAVE_ERROR);
+            	displayErrorMessage(SDK_LOC_SAVE_ERROR);
+           }
+        }
+        return false;
+	}
+	
+    /**
+     * propertyChange
+     */
+    @Override
+	public void propertyChange(PropertyChangeEvent event) {
+        // This class is set as the property listener for all fields.
+    	// As there is only one field, we know any value change is for the directory field
+        if (event.getProperty().equals(FieldEditor.VALUE)) {
+			String newSdkLocation = (String)event.getNewValue();
+			// The newSdkLocation will only be null or empty if an error has occurred
+			if ((newSdkLocation != null) && !newSdkLocation.isEmpty())
+	            directoryField.fillTargetList(new File(newSdkLocation));
+        }
+        else
+        	super.propertyChange(event);
+    }
+    
+    /**
+     * @see IDialogPage#createControl(Composite)
+     */
+    @Override
+	public void createControl(Composite parent){
+    	super.createControl(parent);
+    	shell = parent.getShell();
+    	changeButton.setFocus();
     }
 
     /**
@@ -67,192 +163,217 @@ public class AndroidPreferencePage extends FieldEditorPreferencePage implements
      */
     @Override
     public void createFieldEditors() {
-
-        mDirectoryField = new SdkDirectoryFieldEditor(AdtPrefs.PREFS_SDK_DIR,
-                Messages.AndroidPreferencePage_SDK_Location_, getFieldEditorParent());
-
-        addField(mDirectoryField);
+        directoryField = new SdkLocationFieldEditor(this);
+        directoryField.postCreate();
+        addField(directoryField);
     }
 
-    /*
-     * (non-Javadoc)
-     *
+    /**
+     * Contributes additional buttons to the given composite.
+     * @param parent the button bar
+     */
+    @Override
+    protected void contributeButtons(Composite buttonBar) {
+    	changeButton = createButton(buttonBar, CHANGE_BUTTON_TEXT);
+		changeButton.setToolTipText(CHANGE_TOOLTIP);
+		changeButton.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				onStartChangeSdk();
+			}
+
+		});
+    	updateButton = createButton(buttonBar, UPDATE_BUTTON_TEXT);
+    	updateButton.setToolTipText(UPDATE_TOOLTIP);
+    	// Disable button until SDK status analysed
+    	updateButton.setEnabled(false);
+    	updateButton.addSelectionListener(new SelectionAdapter() {
+			@Override
+			public void widgetSelected(SelectionEvent e) {
+				onStartUpdateSdk();
+			}
+
+		});
+    	GridLayout gridLayout = (GridLayout) buttonBar.getLayout(); 
+    	// Increment pareent layout count is required to keep all buttons in alignment
+    	gridLayout.numColumns += 2;
+    }
+
+    /**
+     * init
      * @see org.eclipse.ui.IWorkbenchPreferencePage#init(org.eclipse.ui.IWorkbench)
      */
     @Override
     public void init(IWorkbench workbench) {
     }
 
+    /**
+     * dispose
+     */
     @Override
     public void dispose() {
         super.dispose();
-
-        if (mDirectoryField != null) {
-            mDirectoryField.dispose();
-            mDirectoryField = null;
+        // Clean up image resources  
+        if (directoryField != null) {
+            directoryField.dispose();
+            directoryField = null;
         }
     }
 
     /**
-     * Custom version of DirectoryFieldEditor which validates that the directory really
-     * contains an SDK.
-     *
-     * There's a known issue here, which is really a rare edge-case: if the pref dialog is open
-     * which a given sdk directory and the *content* of the directory changes such that the sdk
-     * state changed (i.e. from valid to invalid or vice versa), the pref panel will display or
-     * hide the error as appropriate but the pref panel will fail to validate the apply/ok buttons
-     * appropriately. The easy workaround is to cancel the pref panel and enter it again.
+     * Recomputes the page's error state by calling <code>isValid</code> for
+     * every field editor.
      */
-    private static class SdkDirectoryFieldEditor extends DirectoryFieldEditor {
-
-        private SdkTargetSelector mTargetSelector;
-        private TargetChangedListener mTargetChangeListener;
-
-        public SdkDirectoryFieldEditor(String name, String labelText, Composite parent) {
-            super(name, labelText, parent);
-            setEmptyStringAllowed(false);
-        }
-
-        /**
-         * Method declared on StringFieldEditor and overridden in DirectoryFieldEditor.
-         * Checks whether the text input field contains a valid directory.
-         *
-         * @return True if the apply/ok button should be enabled in the pref panel
-         */
-        @Override
-        protected boolean doCheckState() {
-            String fileName = getTextControl().getText();
-            fileName = fileName.trim();
-
-            if (fileName.indexOf(',') >= 0 || fileName.indexOf(';') >= 0) {
-                setErrorMessage(Messages.AndroidPreferencePage_ERROR_Reserved_Char);
-                return false;  // Apply/OK must be disabled
-            }
-
-            File file = new File(fileName);
-            if (!file.isDirectory()) {
-                setErrorMessage(JFaceResources.getString(
-                    "DirectoryFieldEditor.errorMessage")); //$NON-NLS-1$
-                return false;
-            }
-
-            boolean ok = AndmoreAndroidPlugin.getDefault().checkSdkLocationAndId(fileName,
-                    new AndmoreAndroidPlugin.CheckSdkErrorHandler() {
-                @Override
-                public boolean handleError(
-                        CheckSdkErrorHandler.Solution solution,
-                        String message) {
-                    setErrorMessage(message.replaceAll("\n", " ")); //$NON-NLS-1$ //$NON-NLS-2$
-                    return false;  // Apply/OK must be disabled
-                }
-
-                @Override
-                public boolean handleWarning(
-                        CheckSdkErrorHandler.Solution solution,
-                        String message) {
-                    showMessage(message.replaceAll("\n", " ")); //$NON-NLS-1$ //$NON-NLS-2$
-                    return true;  // Apply/OK must be enabled
-                }
-            });
-            if (ok) clearMessage();
-            return ok;
-        }
-
-        @Override
-        protected void doStore() {
-            super.doStore();
-
-            // Also sync the value to the ~/.android preference settings such that we can
-            // share it with future new workspaces
-            String path = AdtPrefs.getPrefs().getOsSdkFolder();
-            if (path != null && path.length() > 0 && new File(path).exists()) {
-                DdmsPreferenceStore ddmsStore = new DdmsPreferenceStore();
-                ddmsStore.setLastSdkPath(path);
-            }
-        }
-
-        @Override
-        public Text getTextControl(Composite parent) {
-            setValidateStrategy(VALIDATE_ON_KEY_STROKE);
-            return super.getTextControl(parent);
-        }
-
-        /* (non-Javadoc)
-         * Method declared on StringFieldEditor (and FieldEditor).
-         */
-        @Override
-        protected void doFillIntoGrid(Composite parent, int numColumns) {
-            super.doFillIntoGrid(parent, numColumns);
-
-            GridData gd;
-            Label l = new Label(parent, SWT.NONE);
-            l.setText("Note: The list of SDK Targets below is only reloaded once you hit 'Apply' or 'OK'.");
-            gd = new GridData(GridData.FILL_HORIZONTAL);
-            gd.horizontalSpan = numColumns;
-            l.setLayoutData(gd);
-
-            try {
-                // We may not have an sdk if the sdk path pref is empty or not valid.
-                Sdk sdk = Sdk.getCurrent();
-                IAndroidTarget[] targets = sdk != null ? sdk.getTargets().toArray(new IAndroidTarget[0]) : null;
-
-                mTargetSelector = new SdkTargetSelector(parent,
-                        targets,
-                        false /*allowSelection*/);
-                gd = (GridData) mTargetSelector.getLayoutData();
-                gd.horizontalSpan = numColumns;
-
-                if (mTargetChangeListener == null) {
-                    mTargetChangeListener = new TargetChangedListener();
-                    AndmoreAndroidPlugin.getDefault().addTargetListener(mTargetChangeListener);
-
-                    // Trigger a check to see if the SDK needs to be reloaded (which will
-                    // invoke onSdkLoaded asynchronously as needed).
-                    AndmoreAndroidPlugin.getDefault().refreshSdk();
-                }
-            } catch (Exception e) {
-                // We need to catch *any* exception that arises here, otherwise it disables
-                // the whole pref panel. We can live without the Sdk target selector but
-                // not being able to actually set an sdk path.
-                AndmoreAndroidPlugin.log(e, "SdkTargetSelector failed");
-            }
-        }
-
-        @Override
-        public void dispose() {
-            super.dispose();
-            if (mTargetChangeListener != null) {
-                AndmoreAndroidPlugin.getDefault().removeTargetListener(mTargetChangeListener);
-                mTargetChangeListener = null;
-            }
-        }
-
-        private class TargetChangedListener implements ITargetChangeListener {
-            @Override
-            public void onSdkLoaded() {
-                if (mTargetSelector != null) {
-                    // We may not have an sdk if the sdk path pref is empty or not valid.
-                    Sdk sdk = Sdk.getCurrent();
-                    IAndroidTarget[] targets = sdk != null ? sdk.getTargets().toArray(new IAndroidTarget[0]) : null;
-
-                    mTargetSelector.setTargets(targets);
-                }
-            }
-
-            @Override
-            public void onProjectTargetChange(IProject changedProject) {
-                // do nothing.
-            }
-
-            @Override
-            public void onTargetLoaded(IAndroidTarget target) {
-                // do nothing.
-            }
-        }
-    }
-
     @Override
-    public void setVisible(boolean visible) {
-        super.setVisible(visible);
+    protected void checkState() {
+        super.checkState();
+        if (updateButton != null)
+	        Display.getDefault().syncExec(new Runnable(){
+	
+				@Override
+				public void run() {
+					// Enable Update button only if SDK location is valid
+			    	updateButton.setEnabled(directoryField.isValid());
+				}});
     }
+
+    /**
+     * Handle event Change button hit
+     */
+	private void onStartChangeSdk() {
+		String sdkLocation = directoryField.getStringValue();
+		// Save SDK selection in case user does not complete the change
+		if (directoryField.isChangePending()) {
+			/*
+	        boolean doApply = MessageDialog.openQuestion(getShell(), SAVE_CHANGES_TITLE, SAVE_CHANGES_PROMPT);
+	        if (doApply) {*/
+	        	Job job = new Job(SAVE_CHANGES_TITLE){
+
+					@Override
+					protected IStatus run(IProgressMonitor monitor) {
+						try {
+							performOk();
+							doSdkSelect(sdkLocation);
+						} catch (Exception e) {
+							consoleLogger.error(e, "Error while applying SDK location change");
+						}
+						return Status.OK_STATUS;
+					}};
+				job.setPriority(Job.BUILD);
+				job.schedule();
+	        //}
+	        directoryField.setChangePending(false);
+		}
+		else
+			doSdkSelect(sdkLocation);
+	}
+
+    /**
+     * Handle event Update button hit
+     */
+	private void onStartUpdateSdk() {
+		String sdkLocation = directoryField.getStringValue();
+		// Save SDK selection in case user does not complete the change
+		if (directoryField.isChangePending()) {
+        	Job job = new Job(UPDATE_CHANGES_TITLE){
+
+				@Override
+				protected IStatus run(IProgressMonitor monitor) {
+					try {
+						performOk();
+						doSdkUpdate(sdkLocation);
+					} catch (Exception e) {
+						consoleLogger.error(e, "Error while applying SDK location change");
+					}
+					return Status.OK_STATUS;
+				}};
+			job.setPriority(Job.BUILD);
+			job.schedule();
+	        directoryField.setChangePending(false);
+		}
+		else
+			doSdkUpdate(sdkLocation);
+	}
+
+	/**
+	 * Select SDK
+	 */
+	private void doSdkSelect(String sdkLocation) {
+		SdkInstaller sdkInstaller = new SdkInstaller(getPreferenceStore(), consoleLogger);
+
+		// Show the Select SDK Wizard. All configuration takes place in the wizard.
+		SelectSdkWizard selectSdkWizard = new SelectSdkWizard(resourceProvider, sdkInstaller, sdkLocation);
+		// Set callback to handle change of selected SDK.
+		selectSdkWizard.setSdkSelectionListener(new SdkSelectionListener(){
+
+			@Override
+			public void onSdkSelectionChange(File newSdkLocation) {
+		        Display.getDefault().syncExec(new Runnable() {
+		            @Override
+		            public void run() {
+		            	// Setting the directory field value will trigger a SDK profile check and update of listed targets
+		            	directoryField.setStringValue(newSdkLocation.getPath());
+		            }
+		        });
+ 			}
+
+			@Override
+			public void onSelectionError(String message) {
+				displayErrorMessage(message);
+			}
+
+			});
+        Display.getDefault().syncExec(new Runnable() {
+            @Override
+            public void run() {
+ 	    		WizardDialog dialog = new WizardDialog(getShell(), selectSdkWizard);
+                dialog.open();
+            }
+        });
+	}
+	
+	/**
+	 * Update SDK
+	 */
+	private void doSdkUpdate(String sdkLocation) {
+		SdkInstaller sdkInstaller = new SdkInstaller(getPreferenceStore(), consoleLogger);
+		AndroidSdk androidSdk = new AndroidSdk(new File(sdkLocation), "");
+		sdkInstaller.doInstall(androidSdk, getShell(), null, false);
+	}
+	
+	/**
+	 * Returns parent composite
+	 * @return Composite object
+	 */
+	public Composite getParent() {
+		return getFieldEditorParent();
+	}
+
+	/**
+	 * Create button on button bar
+	 * @param buttonBar The parent composite
+	 * @param buttonText The button text
+	 * @return Button object
+	 */
+	private Button createButton(Composite buttonBar, String buttonText) {
+    	// Code modelled on how Apply and Defaults buttons are created
+		int widthHint = convertHorizontalDLUsToPixels(IDialogConstants.BUTTON_WIDTH);
+    	Button newButton = new Button(buttonBar, SWT.PUSH);
+    	newButton.setText(buttonText);
+		Dialog.applyDialogFont(newButton);
+		Point minButtonSize = newButton.computeSize(SWT.DEFAULT, SWT.DEFAULT, true);
+		GridData data = new GridData(GridData.HORIZONTAL_ALIGN_FILL);
+		data.widthHint = Math.max(widthHint, minButtonSize.x);
+		newButton.setLayoutData(data);
+		return newButton;
+	}
+
+    private void displayErrorMessage(String message) {
+		Display.getDefault().syncExec(new Runnable(){
+
+			@Override
+			public void run() {
+				MessageDialog.openError(shell, SAVE_CHANGES_TITLE, message);
+			}});
+	}
 }

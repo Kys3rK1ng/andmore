@@ -24,7 +24,6 @@ import org.eclipse.andmore.android.AndroidPlugin;
 import org.eclipse.andmore.android.common.log.AndmoreLogger;
 import org.eclipse.andmore.android.common.log.UsageDataConstants;
 import org.eclipse.andmore.android.common.preferences.DialogWithToggleUtils;
-import org.eclipse.andmore.android.common.utilities.EclipseUtils;
 import org.eclipse.andmore.android.i18n.AndroidNLS;
 import org.eclipse.andmore.android.model.AndroidProject;
 import org.eclipse.andmore.android.obfuscate.ObfuscatorManager;
@@ -44,10 +43,14 @@ import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.jface.viewers.IStructuredSelection;
 import org.eclipse.jface.wizard.WizardPage;
 import org.eclipse.osgi.util.NLS;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Monitor;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.INewWizard;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchWindow;
@@ -107,11 +110,11 @@ public class NewAndroidProjectWizard extends BasicNewProjectResourceWizard imple
 		try {
 			getContainer().run(false, false, doSave);
 		} catch (Exception e) {
-			String errMsg = NLS.bind(AndroidNLS.EXC_NewAndroidProjectWizard_AnErrorHasOccurredWhenCreatingTheProject,
-					e.getLocalizedMessage());
-			AndmoreLogger.error(NewAndroidProjectWizard.class, errMsg, e);
-
-			EclipseUtils.showErrorDialog(AndroidNLS.UI_GenericErrorDialogTitle, errMsg, null);
+			//String errMsg = NLS.bind(AndroidNLS.EXC_NewAndroidProjectWizard_AnErrorHasOccurredWhenCreatingTheProject,
+			//		e.getLocalizedMessage());
+			//String errMsg = AndroidNLS.EXC_NewAndroidProjectWizard_AnErrorHasOccurredWhenCreatingTheProject;
+			AndmoreLogger.error(NewAndroidProjectWizard.class, "An error has occurred when creating project", e);
+			//showErrorDialog(AndroidNLS.UI_GenericErrorDialogTitle, errMsg);
 		}
 		boolean success = doSave.isSaved();
 
@@ -128,6 +131,23 @@ public class NewAndroidProjectWizard extends BasicNewProjectResourceWizard imple
 		}
 
 		return success;
+	}
+
+    /**
+     * Displays an error dialog box. This dialog box is ran asynchronously in the ui thread,
+     * therefore this method can be called from any thread.
+     * @param title The title of the dialog box
+     * @param message The error message
+     */
+	private void showErrorDialog(String title, String message) {
+        // dialog box only run in ui thread..
+        Display.getDefault().asyncExec(new Runnable() {
+            @Override
+            public void run() {
+                Shell shell = Display.getDefault().getActiveShell();
+                MessageDialog.openError(shell, title, message);
+            }
+        });
 	}
 
 	/*
@@ -228,7 +248,17 @@ public class NewAndroidProjectWizard extends BasicNewProjectResourceWizard imple
 			SubMonitor subMonitor = SubMonitor.convert(monitor, 20);
 
 			subMonitor.beginTask(AndroidNLS.NewAndroidProjectWizard_Message_CreatingAndroidProject, 10);
-
+			try {
+				saveProject(subMonitor);
+			} catch (InvocationTargetException ignore) {
+				// Already logged
+			} catch (Exception e) {
+				AndmoreLogger.error(NewAndroidProjectWizard.class,
+						"Unexpected error while saving project: " + e.getMessage(), e); //$NON-NLS-1$
+			}
+		}
+		
+		private void saveProject(SubMonitor subMonitor) throws InvocationTargetException {
 			// Gets the auto-building configuration to set it back in the end
 			final boolean autoBuild = ResourcesPlugin.getWorkspace().isAutoBuilding();
 

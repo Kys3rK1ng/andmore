@@ -22,7 +22,7 @@ public class SdkResourceProvider implements PluginResourceProvider {
 
 	@Override
 	public ImageDescriptor descriptorFromPath(String imagePath) {
-		return SdkUserInterfacePlugin.getImageDescriptor(imagePath);
+		return SdkUserInterfacePlugin.instance().getImageDescriptor(imagePath);
 	}
 
 }

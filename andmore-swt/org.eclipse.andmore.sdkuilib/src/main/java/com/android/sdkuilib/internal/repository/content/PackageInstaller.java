@@ -13,9 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/**
- * 
- */
 package com.android.sdkuilib.internal.repository.content;
 
 import java.util.ArrayList;
@@ -43,7 +40,6 @@ import com.android.sdkuilib.internal.repository.PackageInstallListener;
 import com.android.sdkuilib.internal.repository.PackageInstallTask;
 import com.android.sdkuilib.internal.repository.ui.SdkProgressFactory;
 import com.android.sdkuilib.internal.repository.ui.SdkUpdaterChooserDialog;
-import com.android.sdkuilib.internal.tasks.ILogUiProvider;
 
 /**
  * Installs specified packages and their dependencies. 
@@ -56,17 +52,24 @@ import com.android.sdkuilib.internal.tasks.ILogUiProvider;
  */
 public class PackageInstaller {
 
-	private static final String NONE_INSTALLED = "Done. Nothing was installed.";
+	private static final String ALREADY_INSTALLED = "Package %s is already installed on the local SDK";
+	private static final String CANNOT_COMPUTE_DEPENDENCIES = "Unable to compute a complete list of dependencies.";
 	
+	/** User-specified packages listed as PkgItem objects */
     private final List<PkgItem> requiredPackageItems = new ArrayList<PkgItem>();
+    /** List of remote packages to be downloaded */
     private final List<RemotePackage> remotes = new ArrayList<>();
+    /** Map to record remote packages associated with updates */
     private final Map<RemotePackage,UpdatablePackage> updateMap = new HashMap<>();
+    /** Contains various task factories linked to a ProgressView control */
     private final SdkProgressFactory factory;
-	private volatile int numInstalled;
 
     /**
-	 * 
-	 */
+     * Construct a PackageInstaller object using a package visitor to select what to install
+     * @param packageAnalyser Package analyser
+     * @param packageVisitor Package visitor
+     * @param factory Contains various task factories linked to a ProgressView control
+     */
 	public PackageInstaller(PackageAnalyser packageAnalyser, PackageVisitor packageVisitor, SdkProgressFactory factory) {
 		this.factory = factory;
    	    for (PkgItem packageItem: packageAnalyser.getAllPkgItems()) {
@@ -82,30 +85,41 @@ public class PackageInstaller {
 	}
 
     /**
-	 * 
-	 */
+     * Construct a PackageInstaller object to install a given required packages listed as PkgItem objects
+     * @param requiredPackageItems List of PkgItem objects
+     * @param factory Contains various task factories linked to a ProgressView control
+     */
 	public PackageInstaller(List<PkgItem> requiredPackageItems, SdkProgressFactory factory) {
 		this.factory = factory;
 		this.requiredPackageItems.addAll(requiredPackageItems);
    	    assemblePackages();
 	}
 
+	/**
+	 * Returns User-specified packages listed as PkgItem objects
+	 * @return PkgItem list
+	 */
 	public Collection<? extends PkgItem> getRequiredPackageItems() {
 		return requiredPackageItems;
 	}
-	
-	public int getNumInstalled() {
-		return numInstalled;
-	}
 
+	/**
+	 * The install task
+	 * @param shell Shell of control invoking this call
+	 * @param sdkContext SDK context
+	 * @param installListener Callback for events package installed and task completed
+	 */
 	public void installPackages(Shell shell, SdkContext sdkContext, PackageInstallListener installListener) {
 		ITaskFactory taskFactory = factory;
         List<RemotePackage> acceptedRemotes = new ArrayList<>();
+        // Execute task asynchronously
 		ITask prepareTask = new ITask(){
 
 			@Override
 			public void run(ITaskMonitor monitor) {
+				// Compute dependencies
 		        if (computeDependencies(sdkContext) > 0) {
+		        	// Get user to review what is to be installed and accept licences
 			        SdkUpdaterChooserDialog dialog =
 			                new SdkUpdaterChooserDialog(shell, sdkContext, updateMap.values(), remotes);
 			        Display.getDefault().syncExec(new Runnable(){
@@ -113,52 +127,28 @@ public class PackageInstaller {
 						@Override
 						public void run() {
 				            dialog.open();
-				            acceptedRemotes.addAll(dialog.getResult());
 						}});
-		        } else {
-			 		ILogUiProvider sdkProgressControl = factory.getProgressControl();
-					sdkProgressControl.setDescription(NONE_INSTALLED);
-		        	if (installListener != null) {
-	                    installListener.onPackagesInstalled(0);
+			        // Launch task to perform package download and install
+		            acceptedRemotes.addAll(dialog.getResult());
+		    	    if (acceptedRemotes.size() > 0) {
+		    	        PackageInstallTask packageInstallTask = new PackageInstallTask(sdkContext);
+		    			packageInstallTask.run(shell, remotes, acceptedRemotes, installListener);
+			        } else if (installListener != null) {
+			        	installListener.onInstallComplete(0);
 			        }
+		        } else if (installListener != null) {
+		        	installListener.onInstallComplete(0);
 		        }
 			}};
-			
-        taskFactory.start("Preparing Packages", prepareTask, new Runnable(){
-
-			@Override
-			public void run() {
-			    if (acceptedRemotes.size() > 0) {
-			 		ILogUiProvider sdkProgressControl = factory.getProgressControl();
-			        PackageInstallTask packageInstallTask = new PackageInstallTask(sdkContext, remotes, acceptedRemotes) {
-			    		@Override
-			    		public void run() {
-			                int count = getNumInstalled();
-			                numInstalled = count;
-			                if (count == 0) {
-								sdkProgressControl.setDescription(NONE_INSTALLED);
-			                }
-			                else {
-			                	sdkProgressControl.setDescription(String.format("Done. %1$d %2$s installed.",
-			                			count,
-			                			count == 1 ? "package" : "packages"));
-			                }
-			                if (installListener != null)
-			                	installListener.onPackagesInstalled(count);
-			    		}
-			    	};
-			    	factory.start("Installing Packages", packageInstallTask, packageInstallTask);
-		        } else {
-			 		ILogUiProvider sdkProgressControl = factory.getProgressControl();
-					sdkProgressControl.setDescription(NONE_INSTALLED);
-		        	if (installListener != null) {
-	                    installListener.onPackagesInstalled(0);
-			        }
-		        }
-			}});
+        taskFactory.start("Preparing Packages", prepareTask, null);
 	}  
-	
+
+	/**
+	 * Scan required packages to remove any already install and build update map
+	 * @return flag set true if any packages remain to be installed
+	 */
     private boolean assemblePackages() {
+    	// Track already-installed packages
     	List<PkgItem> installedList = null;
         for (PkgItem item: requiredPackageItems) {
         	RemotePackage remotePackage = null;
@@ -166,12 +156,13 @@ public class PackageInstaller {
         		remotePackage = item.getUpdatePkg().getRemote();
         		updateMap.put(remotePackage, item.getUpdatePkg());
         	} else if (item.getMainPackage() instanceof LocalPackage) {
-        		factory.getProgressControl().setDescription("Package " + item.getMainPackage().getDisplayName() + " is already installed on the local SDK");
+        		// An item with just a local package is not an update
+        		factory.getProgressControl().setDescription(String.format(ALREADY_INSTALLED, item.getMainPackage().getDisplayName()));
         		if (installedList == null)
         			installedList = new ArrayList<>();
         		installedList.add(item);
         		continue;
-        	} else {
+        	} else { // Build remotes list
         		remotePackage = (RemotePackage)item.getMainPackage();
         	}
         	remotes.add(remotePackage);
@@ -181,15 +172,23 @@ public class PackageInstaller {
         return !requiredPackageItems.isEmpty();
 	}
 
+    /**
+     * Compute dependencies. The work is done by an Android library function but
+     * the results may contain duplicates which need to be filtered out.
+     * @param sdkContext SDK context
+     * @return final number of packages to be downloaded
+     */
     private int computeDependencies(SdkContext sdkContext) {
         // computeRequiredPackages() may produce a list containing duplicates!
     	ProgressIndicator progress = sdkContext.getProgressIndicator();
         List<RemotePackage> requiredPackages = InstallerUtil.computeRequiredPackages(
                 remotes, sdkContext.getPackages(), progress);
-        if (requiredPackages == null) {
-            progress.logWarning("Unable to compute a complete list of dependencies.");
+        if (requiredPackages == null) { 
+        	// This is not expected as principal packages are normally returned
+            progress.logWarning(CANNOT_COMPUTE_DEPENDENCIES);
             return 0;
         }
+        // Filter out duplicates
         Iterator<RemotePackage> iterator = requiredPackages.iterator();
         Set<RemotePackage> existenceSet = new HashSet<>();
         existenceSet.addAll(remotes);

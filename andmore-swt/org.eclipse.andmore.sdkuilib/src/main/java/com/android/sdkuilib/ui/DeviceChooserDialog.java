@@ -28,7 +28,6 @@ import com.android.sdklib.internal.avd.AvdInfo;
 import com.android.sdklib.repository.targets.SystemImage;
 import com.android.sdkuilib.internal.repository.avd.AvdAgent;
 import com.android.sdkuilib.internal.repository.avd.SdkTargets;
-import com.android.sdkuilib.internal.widgets.AvdSelector;
 import com.android.sdkuilib.internal.widgets.AvdSelector.IAvdFilter;
 
 import org.eclipse.andmore.base.resources.IEditorIconFactory;
@@ -72,7 +71,7 @@ public class DeviceChooserDialog extends Dialog implements IDeviceChangeListener
 
     private Table mDeviceTable;
     private TableViewer mViewer;
-    private AvdSelector mPreferredAvdSelector;
+    private AvdSelectorWindow mAvdSelectorWindow;
 
     private Image mDeviceImage;
     private Image mEmulatorImage;
@@ -393,12 +392,12 @@ public class DeviceChooserDialog extends Dialog implements IDeviceChangeListener
                 boolean deviceMode = mDeviceRadioButton.getSelection();
 
                 mDeviceTable.setEnabled(deviceMode);
-                mPreferredAvdSelector.setEnabled(!deviceMode);
+                mAvdSelectorWindow.setEnabled(!deviceMode);
 
                 if (deviceMode) {
                     handleDeviceSelection();
                 } else {
-                    mResponse.setAvdToLaunch(mPreferredAvdSelector.getSelected().getAvd());
+                    mResponse.setAvdToLaunch(mAvdSelectorWindow.getSelected());
                 }
 
                 enableOkButton();
@@ -484,13 +483,10 @@ public class DeviceChooserDialog extends Dialog implements IDeviceChangeListener
         layout.marginLeft = 30;
         offsetComp.setLayout(layout);
 
-        mPreferredAvdSelector = new AvdSelector(offsetComp,
-                mSdkContext,
-                new NonRunningAvdFilter(),
-                AvdDisplayMode.SIMPLE_SELECTION);
-        mPreferredAvdSelector.setTableHeightHint(100);
-        mPreferredAvdSelector.setEnabled(false);
-        mPreferredAvdSelector.setSelectionListener(new SelectionAdapter() {
+        mAvdSelectorWindow = new AvdSelectorWindow(offsetComp, new SdkCallAgent(mSdkContext.getHandler(), mSdkContext.getSdkLog()), new NonRunningAvdFilter());
+        mAvdSelectorWindow.setTableHeightHint(100);
+        mAvdSelectorWindow.setEnabled(false);
+        mAvdSelectorWindow.setSelectionListener(new SelectionAdapter() {
             /**
              * Handles single-click selection on the AVD selector.
              * {@inheritDoc}
@@ -498,7 +494,7 @@ public class DeviceChooserDialog extends Dialog implements IDeviceChangeListener
             @Override
             public void widgetSelected(SelectionEvent e) {
                 if (mDisableAvdSelectionChange == false) {
-                    mResponse.setAvdToLaunch(mPreferredAvdSelector.getSelected().getAvd());
+                    mResponse.setAvdToLaunch(mAvdSelectorWindow.getSelected());
                     enableOkButton();
                 }
             }
@@ -584,8 +580,9 @@ public class DeviceChooserDialog extends Dialog implements IDeviceChangeListener
                 if (mDeviceTable.isDisposed() == false) {
                     // refresh all
                     mViewer.refresh();
+
                     // update the selection
-                     updateDefaultSelection();
+                    updateDefaultSelection();
 
                     // update the display of AvdInfo (since it's filtered to only display
                     // non running AVD.)
@@ -670,6 +667,7 @@ public class DeviceChooserDialog extends Dialog implements IDeviceChangeListener
      */
     private void enableOkButton() {
         Button okButton = getButton(IDialogConstants.OK_ID);
+
         if (isDeviceMode()) {
             okButton.setEnabled(mResponse.getDeviceToUse() != null &&
                     mResponse.getDeviceToUse().isOnline());
@@ -795,17 +793,17 @@ public class DeviceChooserDialog extends Dialog implements IDeviceChangeListener
      */
     private void refillAvdList(boolean reloadAvds) {
         // save the current selection
-        AvdAgent selected = mPreferredAvdSelector.getSelected();
+        AvdInfo selected = mAvdSelectorWindow.getSelected();
 
         // disable selection change.
         mDisableAvdSelectionChange = true;
 
         // refresh the list
-        mPreferredAvdSelector.refresh(false);
+        mAvdSelectorWindow.refresh(false);
 
         // attempt to reselect the proper avd if needed
         if (selected != null) {
-            if (mPreferredAvdSelector.setSelection(selected) == false) {
+            if (mAvdSelectorWindow.setSelection(selected) == false) {
                 // looks like the selection is lost. this can happen if an emulator
                 // running the AVD that was selected was launched from outside of Eclipse).
                 mResponse.setAvdToLaunch(null);

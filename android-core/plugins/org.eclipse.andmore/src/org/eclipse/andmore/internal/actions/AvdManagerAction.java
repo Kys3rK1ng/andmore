@@ -55,7 +55,6 @@ public class AvdManagerAction implements IWorkbenchWindowActionDelegate, IObject
             AndmoreAndroidPlugin.getDefault().refreshSdk();
             SdkCallAgent callAgent = new SdkCallAgent(
             	sdk.getAndroidSdkHandler(),
-            	sdk.getRepoManager(),
             	new AdtConsoleSdkLog());
             // Runs the updater window, directing all logs to the ADT console.
             AvdManagerWindow window = new AvdManagerWindow(

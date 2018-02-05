@@ -29,20 +29,22 @@ class TaskMonitorImpl implements ITaskMonitor {
 
     private static final double MAX_COUNT = 10000.0;
 
-    private interface ISubTaskMonitor extends ITaskMonitor {
-        public void subIncProgress(double realDelta);
-    }
+    //private interface ISubTaskMonitor extends ITaskMonitor {
+    //    public void subIncProgress(double realDelta);
+    //}
 
     private double mIncCoef = 0;
     private double mValue = 0;
     private final IProgressUiProvider mUi;
+    private boolean isIndeterminate;
+    private boolean isCancellable;
 
     /**
      * Returns true if the given {@code monitor} is an instance of {@link TaskMonitorImpl}
      * or its private SubTaskMonitor.
      */
     public static boolean isTaskMonitorImpl(ITaskMonitor monitor) {
-        return monitor instanceof TaskMonitorImpl || monitor instanceof SubTaskMonitor;
+        return monitor instanceof TaskMonitorImpl; // || monitor instanceof SubTaskMonitor;
     }
 
     /**
@@ -121,7 +123,7 @@ class TaskMonitorImpl implements ITaskMonitor {
 
     @Override
     public int getProgressMax() {
-        return mIncCoef > 0 ? (int) (MAX_COUNT / mIncCoef) : 0;
+        return mIncCoef > 0 ? (int) (MAX_COUNT / mIncCoef) : (int)MAX_COUNT;
     }
 
     /**
@@ -214,9 +216,10 @@ class TaskMonitorImpl implements ITaskMonitor {
      */
     @Override
     public ITaskMonitor createSubMonitor(int tickCount) {
-        assert mIncCoef > 0;
-        assert tickCount > 0;
-        return new SubTaskMonitor(this, null, mValue, tickCount * mIncCoef);
+        //assert mIncCoef > 0;
+        //assert tickCount > 0;
+        //return new SubTaskMonitor(this, null, mValue, tickCount * mIncCoef);
+    	throw new UnsupportedOperationException();
     }
 
     // ----- ILogger interface ----
@@ -248,7 +251,7 @@ class TaskMonitorImpl implements ITaskMonitor {
     }
 
     // ----- Sub Monitor -----
-
+/*
     private static class SubTaskMonitor implements ISubTaskMonitor {
 
         private final TaskMonitorImpl mRoot;
@@ -258,15 +261,15 @@ class TaskMonitorImpl implements ITaskMonitor {
         private double mSubValue;
         private double mSubCoef;
 
-        /**
-         * Creates a new sub task monitor which will work for the given range [start, start+span]
-         * in its parent.
-         *
-         * @param taskMonitor The ProgressTask root
-         * @param parent The immediate parent. Can be the null or another sub task monitor.
-         * @param start The start value in the root's coordinates
-         * @param span The span value in the root's coordinates
-         */
+        //
+        // Creates a new sub task monitor which will work for the given range [start, start+span]
+        // in its parent.
+        //
+        // @param taskMonitor The ProgressTask root
+        // @param parent The immediate parent. Can be the null or another sub task monitor.
+        // @param start The start value in the root's coordinates
+        // @param span The span value in the root's coordinates
+        //
         public SubTaskMonitor(TaskMonitorImpl taskMonitor,
                 ISubTaskMonitor parent,
                 double start,
@@ -387,4 +390,41 @@ class TaskMonitorImpl implements ITaskMonitor {
         }
 
     }
+*/
+	@Override
+	public void cancel() {
+		if (isCancellable) {
+			mUi.cancel();
+		}
+	}
+
+	@Override
+	public void setCancellable(boolean cancellable) {
+		this.isCancellable = cancellable; 
+	}
+
+	@Override
+	public boolean isCancellable() {
+		return isCancellable;
+	}
+
+	@Override
+	public void setIndeterminate(boolean indeterminate) {
+		this.isIndeterminate = indeterminate;
+		if (indeterminate)
+	        mUi.setProgress((int)MAX_COUNT);
+	}
+
+	@Override
+	public boolean isIndeterminate() {
+		return isIndeterminate;
+	}
+
+	@Override
+	public void setFraction(double fraction) {
+		mValue = fraction * (double)MAX_COUNT;
+        mUi.setProgress((int)mValue);
+        // Disable delta mechanism
+        mIncCoef = 0;
+	}
 }

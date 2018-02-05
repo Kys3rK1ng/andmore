@@ -11,8 +11,8 @@ Require-Bundle: org.eclipse.andmore.android,
  org.eclipse.ui.console,
  org.eclipse.core.runtime,
  org.eclipse.core.resources,
- org.eclipse.sequoyah.device.framework,
- org.eclipse.sequoyah.device.common.utilities
+ org.eclipse.sequoyah.device.framework;bundle-version="0.5.2",
+ org.eclipse.sequoyah.device.common.utilities;bundle-version="0.5.2"
 Bundle-RequiredExecutionEnvironment: JavaSE-1.8
 Bundle-ActivationPolicy: lazy
 Bundle-Localization: plugin

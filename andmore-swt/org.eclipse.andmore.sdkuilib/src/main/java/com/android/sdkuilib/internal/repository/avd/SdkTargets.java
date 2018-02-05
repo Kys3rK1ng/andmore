@@ -35,11 +35,14 @@ import com.android.repository.api.ProgressIndicator;
 import com.android.sdklib.AndroidTargetHash;
 import com.android.sdklib.AndroidVersion;
 import com.android.sdklib.IAndroidTarget;
+import com.android.sdklib.ISystemImage;
 import com.android.sdklib.repository.IdDisplay;
 import com.android.sdklib.repository.meta.DetailsTypes;
 import com.android.sdklib.repository.targets.AddonTarget;
+import com.android.sdklib.repository.targets.AndroidTargetManager;
 import com.android.sdklib.repository.targets.PlatformTarget;
 import com.android.sdklib.repository.targets.SystemImage;
+import com.android.sdklib.repository.targets.SystemImageManager;
 import com.android.sdkuilib.internal.repository.content.PackageType;
 
 /**
@@ -50,10 +53,12 @@ import com.android.sdkuilib.internal.repository.content.PackageType;
  * 16-11-2017
  */
 public class SdkTargets {
+	/** SDK context */
+	private final SdkContext sdkContext;
     /** All available targets */
 	private final List<IAndroidTarget> targets = new ArrayList<>();
 	/** All available system images */
-	private final Collection<SystemImage> sysImages;
+	private final List<SystemImage> sysImages = new ArrayList<>();
 	/** Maps system image to target by platform hash */
 	private final Map<SystemImage,IAndroidTarget> targetMap = new HashMap<>();
 	
@@ -62,28 +67,8 @@ public class SdkTargets {
 	 * @param sdkContext The SDK context containing reference to AndroidSdkHandler object
 	 */
 	public SdkTargets(SdkContext sdkContext) {
-		// Use AndroidTargetManager to get targets
-		ProgressIndicator progress = sdkContext.getProgressIndicator();
-        targets.addAll( 
-        		sdkContext.getHandler().getAndroidTargetManager(progress)
-                .getTargets(progress));
-        Collections.sort(targets, new Comparator<IAndroidTarget>(){
-
-			@Override
-			public int compare(IAndroidTarget target1, IAndroidTarget target2) {
-				return getApiLevel(target1) - getApiLevel(target2);
-			}});
-        // Use SystemImageManager to get system images
-        sysImages =
-        		sdkContext.getHandler().getSystemImageManager(progress).getImages();
-        Iterator<SystemImage> iterator = sysImages.iterator();
-        while(iterator.hasNext()) {
-        	SystemImage systemImage = iterator.next();
-        	IAndroidTarget target = mapTarget(systemImage);
-        	if (target != null)
-        		targetMap.put(systemImage, target);
-        }
-        	
+		this.sdkContext = sdkContext;
+		sysImages.addAll(loadTargets());	
 	}
 
 	/**
@@ -119,7 +104,7 @@ public class SdkTargets {
 	/**
 	 * Returns all available targets
 	 * @return IAndroidTarget collection
-	 * @ss {@link #getSystemImageTargets()}
+	 * @see {@link #getSystemImageTargets()}
 	 */
 	public Collection<IAndroidTarget> getTargets() {
 		return targets;
@@ -151,14 +136,24 @@ public class SdkTargets {
 	}
 
 	/**
-	 * Return target matching Android version of given system image
+	 * Return target matching Android version of given system image, ignoring skins,
+	 * which can be omitted from system images assigned to AVD info objects
 	 * @param systemImage SystemImage object
 	 * @return IAndroidTarget object
 	 */
 	public IAndroidTarget getTargetForSysImage(SystemImage systemImage) {
-		return targetMap.get(systemImage);
+		for (SystemImage targetsImage: sysImages) {
+			if (compareSysImage(systemImage, targetsImage) == 0)
+				return targetMap.get(targetsImage);
+		}
+		return null;
 	}
 
+	/**
+	 * Returns target for given Android version
+	 * @param androidVersion The Android version
+	 * @return IAndroidTarget object
+	 */
 	public IAndroidTarget getTargetForAndroidVersion(AndroidVersion androidVersion) {
 		for (IAndroidTarget target: targetMap.values()) {
 			if (filterOnApi(androidVersion, target))
@@ -167,6 +162,21 @@ public class SdkTargets {
 		return null;
 	}
 
+	/**
+	 * Reload targets and system images. Call after an install/removal of relevant packages.
+	 */
+	public void reload() {
+		targets.clear();
+		sysImages.clear();
+		targetMap.clear();
+		sysImages.addAll(loadTargets());	
+	}
+	
+	/**
+	 * Returns a target mapped to a system image based on DetailsType information
+	 * @param systemImage The system image
+	 * @return IAndroidTarget object or null if no suitable target found
+	 */
 	private IAndroidTarget mapTarget(SystemImage systemImage) {
 		PackageType packageType = null;
 		IdDisplay vendorId = IdDisplay.create("", "");
@@ -196,6 +206,12 @@ public class SdkTargets {
 		return null;
 	}
 
+	/**
+	 * Returns flag set true if system image and target match on Android version
+	 * @param systemImage The system image
+	 * @param target The target
+	 * @return boolean
+	 */
 	private boolean filterOnApi(SystemImage systemImage, IAndroidTarget target)
 	{
 		// AVD Manager, for each AVD, stores just platform version as hash, so this defines the system image/target association
@@ -204,6 +220,12 @@ public class SdkTargets {
 		return imageApiHash.equals(targetHash);
 	}
 	
+	/**
+	 * Returns flag set true if target matches on given Android version
+	 * @param systemImage The Android version
+	 * @param target The target
+	 * @return boolean
+	 */
 	private boolean filterOnApi(AndroidVersion version, IAndroidTarget target)
 	{
 		// AVD Manager, for each AVD, stores just platform version as hash, so this defines the system image/target association
@@ -211,7 +233,12 @@ public class SdkTargets {
 		String targetHash = AndroidTargetHash.getPlatformHashString(target.getVersion());
 		return imageApiHash.equals(targetHash);
 	}
-	
+
+	/**
+	 * Returns API level of given target
+	 * @param target The target
+	 * @return int
+	 */
 	private int getApiLevel(IAndroidTarget target) {
 		if (target.isPlatform()) {
 			PlatformTarget plaformTarget = (PlatformTarget)target;
@@ -221,4 +248,64 @@ public class SdkTargets {
 		return addonTarget.getParent().getVersion().getApiLevel();
 	}
 
+	/**
+	 * Load contents using AndroidTargetManager and AndroidSystemImageManager
+	 * @return SystemImage collection obtained from AndroidSystemImageManager
+	 */
+	private Collection<SystemImage> loadTargets() {
+		// Target and SystemImage manager contents are cached, so we need to fetch the managers fron the 
+		// owning AndroidSdkHandler each time in case packages have changed.
+		ProgressIndicator progress = sdkContext.getProgressIndicator();
+        targets.addAll( getTargetManager().getTargets(progress));
+        Collections.sort(targets, new Comparator<IAndroidTarget>(){
+
+			@Override
+			public int compare(IAndroidTarget target1, IAndroidTarget target2) {
+				return getApiLevel(target1) - getApiLevel(target2);
+			}});
+        // Use SystemImageManager to get system images
+        Collection<SystemImage> managedSyatemImages =
+        		getSysImageManager().getImages();
+        // Map system image to target, each having the same Android version
+        Iterator<SystemImage> iterator = managedSyatemImages.iterator();
+        while(iterator.hasNext()) {
+        	SystemImage systemImage = iterator.next();
+        	IAndroidTarget target = mapTarget(systemImage);
+        	if (target != null)
+        		targetMap.put(systemImage, target);
+        }
+        return managedSyatemImages;
+	}
+
+	/**
+	 * Returns Target Manager
+	 * @return AndroidTargetManager object
+	 */
+	private AndroidTargetManager getTargetManager() {
+		return sdkContext.getHandler().getAndroidTargetManager(sdkContext.getProgressIndicator());
+	}
+
+	/**
+	 * Returns System Image Manager 
+	 * @return SystemImageManager object
+	 */
+	private SystemImageManager getSysImageManager() {
+		return sdkContext.getHandler().getSystemImageManager(sdkContext.getProgressIndicator());
+	}
+
+	/**
+	 * Compares 2 SystemImage objects without comparing skins. For some reason, the AvdInfo system image may omit skins.
+	 * @param sysImage The first object
+	 * @param otherSysImage The second object
+	 * @return comparison result, the value for a match beng 0
+	 */
+    private int compareSysImage(SystemImage sysImage, ISystemImage otherSysImage) {
+        return  Comparator.comparing(ISystemImage::getTag)
+                        .thenComparing(ISystemImage::getAbiType)
+                        .thenComparing(
+                                ISystemImage::getAddonVendor,
+                                Comparator.nullsFirst(IdDisplay::compareTo))
+                        .thenComparing(ISystemImage::getLocation)
+                        .compare(sysImage, otherSysImage);
+    }
 }

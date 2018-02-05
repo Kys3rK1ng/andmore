@@ -23,6 +23,12 @@ import org.eclipse.swt.graphics.Font;
 import com.android.sdklib.AndroidVersion;
 import org.eclipse.andmore.base.resources.ImageFactory;
 
+/**
+ * PkgCellAgent is a intermediary between PkgCellLabelProvider and the application
+ * @author Andrew Bowley
+ *
+ * 18-12-2017
+ */
 public class PkgCellAgent {
 
 	/** Column identities */
@@ -31,25 +37,46 @@ public class PkgCellAgent {
 	public static final int REVISION = 3;
 	public static final int STATUS = 4;
 
+	/** Font for italic text */
 	private final Font mTreeFontItalic;
+	/** Image factory */
 	private final ImageFactory mImgFactory;
+	/** Category list */
 	private final List<PkgCategory<AndroidVersion>> mCategoryList;
-	
+
+	/**
+	 * Construct PkgCellAgent object
+	 * @param sdkContext SDK context
+	 * @param packageAnalyser Package anayser
+	 * @param treeFontItalic Font for italic text
+	 */
 	public PkgCellAgent(SdkContext sdkContext, PackageAnalyser packageAnalyser, Font treeFontItalic) {
 		this.mTreeFontItalic = treeFontItalic;
 		this.mImgFactory = sdkContext.getSdkHelper().getImageFactory();
 		this.mCategoryList = packageAnalyser.getApiCategories();
 	}
 
+	/**
+	 * Returns font for italic text
+	 * @return Font object
+	 */
 	public Font getTreeFontItalic()
 	{
 		return mTreeFontItalic;
 	}
 
+	/**
+	 * Returns image factory
+	 * @return ImageFactory object
+	 */
 	public ImageFactory getImgFactory() {
 		return mImgFactory;
 	}
 
+	/**
+	 * Returs categories
+	 * @return PkgCategory iist
+	 */
 	public List<PkgCategory<AndroidVersion>> getCategoryList() {
 		return mCategoryList;
 	}

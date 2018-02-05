@@ -29,11 +29,14 @@ import com.android.ide.common.sdk.LoadStatus;
 import com.android.io.StreamException;
 import com.android.resources.ResourceFolderType;
 import com.android.sdklib.IAndroidTarget;
+import com.android.sdkuilib.wizard.SelectSdkWizard;
 import com.android.utils.ILogger;
 import com.google.common.collect.Sets;
 import com.google.common.io.Closeables;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin.CheckSdkErrorHandler.Solution;
+import org.eclipse.andmore.base.SdkSelectionListener;
+import org.eclipse.andmore.base.resources.PluginResourceProvider;
 import org.eclipse.andmore.ddms.DdmsPlugin;
 import org.eclipse.andmore.internal.actions.SdkManagerAction;
 import org.eclipse.andmore.internal.editors.AndroidXmlEditor;
@@ -50,9 +53,12 @@ import org.eclipse.andmore.internal.resources.manager.GlobalProjectMonitor;
 import org.eclipse.andmore.internal.resources.manager.ResourceManager;
 import org.eclipse.andmore.internal.resources.manager.GlobalProjectMonitor.IFileListener;
 import org.eclipse.andmore.internal.resources.manager.GlobalProjectMonitor.IProjectListener;
+import org.eclipse.andmore.internal.sdk.AdtConsoleSdkLog;
 import org.eclipse.andmore.internal.sdk.Sdk;
 import org.eclipse.andmore.internal.sdk.Sdk.ITargetChangeListener;
 import org.eclipse.andmore.internal.ui.EclipseUiHelper;
+import org.eclipse.andmore.sdktool.SdkUserInterfacePlugin;
+import org.eclipse.andmore.sdktool.install.SdkInstaller;
 import org.eclipse.andmore.service.AdtStartupService;
 import org.eclipse.core.commands.Command;
 import org.eclipse.core.resources.IFile;
@@ -68,7 +74,10 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.QualifiedName;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.SubMonitor;
+import org.eclipse.core.runtime.jobs.IJobChangeEvent;
+import org.eclipse.core.runtime.jobs.IJobChangeListener;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobChangeAdapter;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
@@ -81,6 +90,7 @@ import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.jface.text.IRegion;
 import org.eclipse.jface.util.IPropertyChangeListener;
 import org.eclipse.jface.util.PropertyChangeEvent;
+import org.eclipse.jface.wizard.WizardDialog;
 import org.eclipse.swt.graphics.Color;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.widgets.Display;
@@ -89,6 +99,7 @@ import org.eclipse.ui.IEditorDescriptor;
 import org.eclipse.ui.IEditorPart;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PartInitException;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.browser.IWebBrowser;
@@ -132,6 +143,7 @@ import java.util.Set;
 public class AndmoreAndroidPlugin extends AbstractUIPlugin implements ILogger {
     /** The plug-in ID */
     public static final String PLUGIN_ID = "org.eclipse.andmore"; //$NON-NLS-1$
+	private static final String SDK_LOC_SAVE_ERROR = "Error saving SDK location";
 
     /** singleton instance */
     private static AndmoreAndroidPlugin sPlugin;
@@ -305,15 +317,21 @@ public class AndmoreAndroidPlugin extends AbstractUIPlugin implements ILogger {
 
     /** Called when the workbench has been started */
     public void workbenchStarted() {
+        String sdkLocation = AdtPrefs.getPrefs().getOsSdkFolder();
+        boolean isSdkLocationValid = false;
+        if (sdkLocation != null && !sdkLocation.trim().isEmpty()) {
+        	isSdkLocationValid = checkSdkLocationAndId();
+        }
         // Parse the SDK content.
         // This is deferred in separate jobs to avoid blocking the bundle start.
-        final boolean isSdkLocationValid = checkSdkLocationAndId();
         if (isSdkLocationValid) {
         	info("Parsing sdk content.");
             // parse the SDK resources.
             // Wait 2 seconds before starting the job. This leaves some time to the
             // other bundles to initialize.
             parseSdkContent(2000 /*milliseconds*/);
+        } else {
+        	installSdk();
         }
 
         Display display = getDisplay();
@@ -1421,6 +1439,81 @@ public class AndmoreAndroidPlugin extends AbstractUIPlugin implements ILogger {
         return true;
     }
 
+    /**
+     * Runs SDK install wizard
+     * @param sdkInstallTask The task provided by the early startup code to launch the install wizard
+     */
+    private void installSdk() {
+        // Perform the update in a thread (here an Eclipse runtime job)
+        // since this should never block the caller (especially the start method)
+    	final String JOB_NAME = "SDK Install";
+        Job job = new Job(JOB_NAME) {
+            @Override
+            protected IStatus run(IProgressMonitor monitor) {
+                try {
+                	showSdkInstallWizard();
+                } catch (Throwable t) {
+                    log(t, "Unknown exception in " + JOB_NAME);    //$NON-NLS-1$
+                    return new Status(IStatus.ERROR, PLUGIN_ID,
+                    		JOB_NAME + " failed", t);              //$NON-NLS-1$
+                } finally {
+                    if (monitor != null) {
+                        monitor.done();
+                    }
+                }
+                return Status.OK_STATUS;
+            }
+        };
+        IJobChangeListener listener = new JobChangeAdapter(){
+			@Override
+			public void done(IJobChangeEvent event) {
+		        String sdkLocation = AdtPrefs.getPrefs().getOsSdkFolder();
+		        if (sdkLocation != null && !sdkLocation.trim().isEmpty() &&
+		        	checkSdkLocationAndId())
+		        	parseSdkContent(0);
+			}};
+		job.addJobChangeListener(listener );
+        job.setPriority(Job.INTERACTIVE);
+        job.schedule();
+    }
+    private void showSdkInstallWizard() {
+        final IWorkbench workbench = PlatformUI.getWorkbench();
+		PluginResourceProvider resourceProvider = new PluginResourceProvider(){
+			@Override
+			public ImageDescriptor descriptorFromPath(String imagePath) {
+				return SdkUserInterfacePlugin.instance().getImageDescriptor("icons/" + imagePath);
+			}};
+    	IPreferenceStore adtPrefs = getPreferenceStore();
+		SdkInstaller sdkInstaller = new SdkInstaller(adtPrefs, new AdtConsoleSdkLog());
+		SelectSdkWizard selectSdkWizard = new SelectSdkWizard(resourceProvider, sdkInstaller, "" /* no initial selection */);
+		selectSdkWizard.setSdkSelectionListener(new SdkSelectionListener(){
+			@Override
+			public void onSdkSelectionChange(File newSdkLocation) {
+				try {
+					sdkInstaller.updateSdkLocation(newSdkLocation);
+				} catch (IOException e) {
+					sdkInstaller.getLogger().error(e, SDK_LOC_SAVE_ERROR);
+					onSelectionError(SDK_LOC_SAVE_ERROR);
+				}
+			}
+			@Override
+			public void onSelectionError(String message) {
+				Display.getDefault().syncExec(new Runnable(){
+					@Override
+					public void run() {
+		                IWorkbenchWindow window = workbench.getActiveWorkbenchWindow();
+						MessageDialog.openError(window.getShell(), SelectSdkWizard.WINDOW_TITLE, message);
+					}});
+			}});
+        workbench.getDisplay().asyncExec(new Runnable() {
+            @Override
+            public void run() {
+                IWorkbenchWindow window = workbench.getActiveWorkbenchWindow();
+	    		WizardDialog dialog = new WizardDialog(window.getShell(), selectSdkWizard);
+                dialog.open();
+            }
+        });
+    }
     /**
      * Parses the SDK resources.
      */

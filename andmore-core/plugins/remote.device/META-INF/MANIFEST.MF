@@ -7,9 +7,9 @@ Bundle-Activator: org.eclipse.andmore.android.remote.RemoteDevicePlugin
 Bundle-Vendor: %providerName
 Require-Bundle: org.eclipse.ui,
  org.eclipse.core.runtime,
- org.eclipse.sequoyah.device.framework,
- org.eclipse.sequoyah.device.framework.ui,
- org.eclipse.sequoyah.device.common.utilities,
+ org.eclipse.sequoyah.device.framework;bundle-version="0.5.2",
+ org.eclipse.sequoyah.device.framework.ui;bundle-version="0.5.2",
+ org.eclipse.sequoyah.device.common.utilities;bundle-version="0.5.2",
  org.eclipse.andmore.android.common,
  org.eclipse.andmore.android,
  org.eclipse.andmore.swt

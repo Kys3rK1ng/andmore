@@ -16,17 +16,14 @@
 
 package org.eclipse.andmore.internal.properties;
 
-import com.android.SdkConstants;
-import com.android.sdklib.IAndroidTarget;
-import com.android.sdklib.internal.project.ProjectProperties;
-import com.android.sdklib.internal.project.ProjectPropertiesWorkingCopy;
-import com.android.sdkuilib.widgets.SdkTargetSelector;
-
-import java.util.Collection;
+import java.io.File;
+import java.util.List;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.andmore.internal.sdk.ProjectState;
 import org.eclipse.andmore.internal.sdk.Sdk;
+import org.eclipse.andmore.internal.sdk.SdkLocationListener;
+import org.eclipse.andmore.internal.sdk.SdkTargetControl;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.IResource;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -41,6 +38,11 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.ui.dialogs.PropertyPage;
 
+import com.android.SdkConstants;
+import com.android.sdklib.IAndroidTarget;
+import com.android.sdklib.internal.project.ProjectProperties;
+import com.android.sdklib.internal.project.ProjectPropertiesWorkingCopy;
+
 /**
  * Property page for "Android" project.
  * This is accessible from the Package Explorer when right clicking a project and choosing
@@ -50,7 +52,7 @@ import org.eclipse.ui.dialogs.PropertyPage;
 public class AndroidPropertyPage extends PropertyPage {
 
     private IProject mProject;
-    private SdkTargetSelector mSelector;
+    private SdkTargetControl mTargetControl;
     private Button mIsLibrary;
     // APK-SPLIT: This is not yet supported, so we hide the UI
 //    private Button mSplitByDensity;
@@ -66,12 +68,6 @@ public class AndroidPropertyPage extends PropertyPage {
         // get the element (this is not yet valid in the constructor).
         mProject = (IProject)getElement();
 
-        // get the targets from the sdk
-        IAndroidTarget[] targets = null;
-        if (Sdk.getCurrent() != null) {
-            targets = Sdk.getCurrent().getTargets().toArray(new IAndroidTarget[0]);
-        }
-
         // build the UI.
         Composite top = new Composite(parent, SWT.NONE);
         top.setLayoutData(new GridData(GridData.FILL_BOTH));
@@ -82,7 +78,14 @@ public class AndroidPropertyPage extends PropertyPage {
         targetGroup.setLayout(new GridLayout(1, false));
         targetGroup.setText("Project Build Target");
 
-        mSelector = new SdkTargetSelector(targetGroup, targets);
+        mTargetControl = new SdkTargetControl(true /* allow selection */);
+        mTargetControl.setSdkLocationListener(new SdkLocationListener(){
+
+			@Override
+			public void onSdkLocationChanged(File sdkLocation, boolean isValid, List<IAndroidTarget> targetList) {
+				performDefaults();
+			}});
+        mTargetControl.createControl(targetGroup, 1);
 
         Group libraryGroup = new Group(top, SWT.NONE);
         libraryGroup.setLayoutData(new GridData(GridData.FILL_BOTH));
@@ -98,7 +101,7 @@ public class AndroidPropertyPage extends PropertyPage {
         fillUi();
 
         // add callbacks
-        mSelector.setSelectionListener(new SelectionAdapter() {
+        mTargetControl.setSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent e) {
                 updateValidity();
@@ -113,6 +116,12 @@ public class AndroidPropertyPage extends PropertyPage {
     }
 
     @Override
+	public void createControl(Composite parent) {
+    	super.createControl(parent);
+    	mTargetControl.postCreate();
+    }
+    
+    @Override
     public boolean performOk() {
         Sdk currentSdk = Sdk.getCurrent();
         if (currentSdk != null && mProject.isOpen()) {
@@ -123,7 +132,7 @@ public class AndroidPropertyPage extends PropertyPage {
             // See Sdk.mFileListener
             boolean mustSaveProp = false;
 
-            IAndroidTarget newTarget = mSelector.getSelected();
+            IAndroidTarget newTarget = mTargetControl.getSelected();
             if (state == null || newTarget != state.getTarget()) {
                 mPropertiesWorkingCopy.setProperty(ProjectProperties.PROPERTY_TARGET,
                         newTarget.hashString());
@@ -156,7 +165,6 @@ public class AndroidPropertyPage extends PropertyPage {
                 }
             }
         }
-
         return true;
     }
 
@@ -169,14 +177,15 @@ public class AndroidPropertyPage extends PropertyPage {
     private void fillUi() {
         if (Sdk.getCurrent() != null && mProject.isOpen()) {
             ProjectState state = Sdk.getProjectState(mProject);
-
+            if (state == null)
+            	return;
             // make a working copy of the properties
             mPropertiesWorkingCopy = state.getProperties().makeWorkingCopy();
 
             // get the target
             IAndroidTarget target = state.getTarget();
             if (target != null) {
-                mSelector.setSelection(target);
+                mTargetControl.setSelection(target);
             }
 
             mIsLibrary.setSelection(state.isLibrary());
@@ -187,7 +196,7 @@ public class AndroidPropertyPage extends PropertyPage {
 
     private void updateValidity() {
         // look for the selection and validate the page if there is a selection
-        IAndroidTarget target = mSelector.getSelected();
+        IAndroidTarget target = mTargetControl.getSelected();
         setValid(target != null);
     }
 }

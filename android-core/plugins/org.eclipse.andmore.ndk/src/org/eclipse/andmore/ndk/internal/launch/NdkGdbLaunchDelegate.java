@@ -171,7 +171,6 @@ public class NdkGdbLaunchDelegate extends GdbLaunchDelegate {
 				public void run() {
                 	SdkCallAgent callAgent = new SdkCallAgent(
                 			currentSdk.getAndroidSdkHandler(),
-                			currentSdk.getRepoManager(),
                 			sdkIconFactory,
                 			new AdtConsoleSdkLog());
                     // open the chooser dialog. It'll fill 'response' with the device to use

@@ -37,8 +37,16 @@ import com.android.sdkuilib.internal.repository.content.PackageType;
 public class AvdAgent {
 
 	private static final String BLANK = "";
+	/** The wrapped AVD Info object */
 	private final AvdInfo avd;
-	private final IAndroidTarget target;
+	/** The target matching the AVD Info Android version. May be null if AVD needs repair. */
+	private IAndroidTarget target;
+	/** Target platform package path of AVD which needs repair */
+	private String platformPath;
+	/** System image package path of AVD which needs repair */
+	private String systemImagePath;
+
+	// Information extracted from AVD Info data */
 	private String deviceName;
 	private String deviceMfctr;
 	private String path;
@@ -54,7 +62,9 @@ public class AvdAgent {
 	private String snapshot;
 	
 	/**
-	 * 
+	 * Construct an AveAgent object
+	 * @param target The target linked to the AVD
+	 * @param avd The AVD Info object 
 	 */
 	public AvdAgent(IAndroidTarget target, AvdInfo avd) {
 		this.target = target;
@@ -64,6 +74,22 @@ public class AvdAgent {
 		vendor = BLANK;
 		targetDisplayName = BLANK;
 		init();
+	}
+
+	/**
+	 * Construct an AveAgent object for an AVD requiring repair by the installation one or two packages
+	 * @param platformPath Package path of the target platform
+	 * @param systemImagePath Package path of the system image
+	 * @param avd The AVD Info object 
+	 */
+	public AvdAgent(String platformPath, String systemImagePath, AvdInfo avd) {
+		this.platformPath = platformPath;
+		this.systemImagePath = systemImagePath;
+		this.avd = avd;
+		path = avd.getDataFolderPath();
+		systemImageInfo = new SystemImageInfo(avd);
+		vendor = BLANK;
+		targetDisplayName = BLANK;
 	}
 
 	public AvdInfo getAvd() {
@@ -111,15 +137,34 @@ public class AvdAgent {
 		return vendor;
 	}
 
+	/**
+	 * Returns the full name of the target, possibly including vendor name 
+	 * @return String
+	 */
 	public String getTargetFullName() {
-		return target.getFullName();
+		if (target != null)
+			return target.getFullName();
+		// If target not available, use suffix of platform path eg. "android-27"
+		int pos = platformPath.indexOf(';');
+		return platformPath.substring(pos + 1);
 	}
 
+	/**
+	 * Returns the platform version as a readable string 
+	 * @return String
+	 */
 	public String getTargetVersionName() {
+		if (target == null) // No target, so leave blank
+			return BLANK;
 		String platform = target.getVersionName();
+		// The target may return null
 		return platform != null ? platform : BLANK;
 	}
 
+	/**
+	 * Returns target details, which extend to 2 lines for add ons
+	 * @return String
+	 */
 	public String getTargetDisplayName() {
 		return targetDisplayName;
 	}
@@ -136,25 +181,54 @@ public class AvdAgent {
 		return snapshot;
 	}
 
+	/**
+	 * Returns a more user friendly name of the abi type
+	 * @return String
+	 */
 	public String getPrettyAbiType() {
 		return AvdInfo.getPrettyAbiType(avd);
 	}
-	
+
+	/** 
+	 * Returns target platform package path of AVD which needs repair 
+	 * @return String or null if AVD is assigned a target
+	 */
+	public String getPlatformPath() {
+		return platformPath;
+	}
+
+	/** 
+	 * Returns system image package path of AVD which needs repair 
+	 * @return String or null if AVD is assigned a target
+	 */
+	public String getSystemImagePath() {
+		return systemImagePath;
+	}
+
+	/**
+	 * Extract information from AVD Info object
+	 */
 	private void init()
 	{
         deviceName = avd.getProperties().get(AvdManager.AVD_INI_DEVICE_NAME);
         deviceMfctr = avd.getProperties().get(AvdManager.AVD_INI_DEVICE_MANUFACTURER);
-        if (deviceName == null) {
+        if (deviceName == null) { // This is a legacy device no longer supported
         	deviceName = BLANK;
         	deviceMfctr = BLANK;
         }
         else if (deviceMfctr == null)
         	deviceMfctr = BLANK;
+        // Android version of the sustem image, if available, otherwise AVD Android version
         androidVersion = systemImageInfo.getAndroidVersion();
+        // User-friendly description of this version, like "Android 5.1 (Lollipop)",
+        // or "Android 6.X (N) Preview".
         versionWithCodename = SdkVersionInfo
                 .getVersionWithCodename(androidVersion);
         platformVersion = SdkVersionInfo.getVersionString(androidVersion.getApiLevel());
+        if (platformVersion == null) // Above higest known version to Android library
+        	platformVersion = androidVersion.getApiString();
         PackageType packageType = systemImageInfo.getPackageType();
+        // Vendor only applies to add ons and system images
         if ((packageType == PackageType.system_images) || (packageType == PackageType.add_ons)) {
             vendor = systemImageInfo.getVendor();
         }
@@ -167,7 +241,7 @@ public class AvdAgent {
                               target.getFullName(), 
                               target.getParent().getFullName());
         }
-        // Some extra values.
+        // Some AVD properties that are displayed by AVD editor
         Map<String, String> properties = avd.getProperties();
         skin = properties.get(AvdManager.AVD_INI_SKIN_NAME);
         sdcard = properties.get(AvdManager.AVD_INI_SDCARD_SIZE);

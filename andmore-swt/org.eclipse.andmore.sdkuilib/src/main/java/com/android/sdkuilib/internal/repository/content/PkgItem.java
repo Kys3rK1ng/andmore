@@ -28,24 +28,30 @@ import com.android.repository.impl.meta.TypeDetails;
 import com.android.sdklib.AndroidVersion;
 import com.android.sdklib.repository.meta.DetailsTypes;
 import com.android.sdkuilib.internal.repository.content.PackageAnalyser.PkgState;
-import com.android.sdkuilib.internal.repository.ui.PackagesPage;
 import com.android.sdkuilib.internal.repository.ui.PackagesPageIcons;
 
 /**
  * A {@link PkgItem} represents one main {@link Package} combined with its state
- * and an optional update package.
+ * and an optional update package. It is also a node of the tree view, a child of
+ * a category node.
  * <p/>
  * The main package is final and cannot change since it's what "defines" this PkgItem.
  * The state or update package can change later.
  */
 public class PkgItem extends INode implements Comparable<PkgItem> {
     private static final String ICON_PKG_OBSOLETE = "error_icon_16.png";
-    
+
+    /** Information about a package type */
 	private final MetaPackage metaPackage;
+	/** Package state - INSTALLED, NEW or DELETED */
     private PkgState state;
+    /** The package wrapped by this object - can be a LocalPackage or RemotePackage */
     private RepoPackage mainPackage;
+    /** Updatable package for case a local package can be updated */
     private UpdatablePackage updatePackage;
+    /** The package identity, which is the package path minus version, if any */
     private String product;
+    /** Version appended to path, if any */
     private String version;
 
     /**
@@ -53,64 +59,116 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
      * The main package is final and cannot change since it's what "defines" this PkgItem.
      * The state or update package can change later.
      */
-    public PkgItem(RepoPackage mainPackage, MetaPackage metaPackage, PkgState state) {
-    	super();
+    public PkgItem(PkgCategory<AndroidVersion> parent, RepoPackage mainPackage, MetaPackage metaPackage, PkgState state) {
+    	super(parent);
     	this.mainPackage = mainPackage;
         this.metaPackage = metaPackage;
         this.state = state;
         analysePath();
     }
 
+    /**
+     * Returns the product
+     * @return String
+     */
 	public String getProduct() {
 		return product;
 	}
 
+	/** 
+	 * Returns version
+	 * @return String or null if version not appended to package path
+	 */
 	public String getVersion() {
 		return version;
 	}
 
+	/**
+	 * Returns flag set true if package is marked as obsolete
+	 * @return boolean
+	 */
 	public boolean isObsolete() {
         return mainPackage.obsolete();
     }
 
+	/**
+	 * Returns update package
+	 * @return UpdatablePackage object or null if none available
+	 */
     public UpdatablePackage getUpdatePkg() {
         return updatePackage;
     }
 
+    /**
+     * Set updatable package
+     * @param updatePkg The updatable package
+     */
     public void setUpdatePkg(UpdatablePackage updatePkg) {
     	updatePackage = updatePkg;
     }
-    
+
+    /**
+     * Return flag set true if this item has an update
+     * @return boolean
+     */
     public boolean hasUpdatePkg() {
         return updatePackage != null;
     }
 
+    /**
+     * Returns package name
+     * @return String
+     */
     public String getName() {
         return mainPackage.getDisplayName();
     }
 
+    /**
+     * Returns package revision
+     * @return Revision object
+     */
     public Revision getRevision() {
         return mainPackage.getVersion();
     }
 
+    /**
+     * Returns meta package
+     * @return MetaPackage object
+     */
     public MetaPackage getMetaPackage()
     {
     	return metaPackage;
     }
     
+    /**
+     * Returns package wrapped by this item
+     * @return RepoPackage which will actually be either a LocalPackage or RemotePackage
+     */
     public RepoPackage getMainPackage() {
         return mainPackage;
     }
 
+    /**
+     * Returns package state
+     * @return PkgState enum
+     */
     public PkgState getState() {
         return state;
     }
 
+    /**
+     * Returns Android version contained in package type details
+     * @return AndroidVersion object or null if package type details does not include Android version
+     */
     @Nullable
     public AndroidVersion getAndroidVersion() {
         return getAndroidVersion(mainPackage);
     }
 
+    /**
+     * Get new package archives
+     * @return Archive array which is empty if the package is installed. The array will hold only one archive if populated.
+     */
     public Archive[] getArchives() {
     	if (state == PkgState.NEW)
     		return new Archive[]{((RemotePackage)mainPackage).getArchive()};
@@ -118,16 +176,16 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
     }
 
 	/**
-	 * Returns the image resource value for the label of the given element.  
-	 * @param element Target
+	 * Returns the image resource value for the node label 
+	 * @param element Not used
 	 * @param columnIndex The index of the column being displayed
 	 * @return the resource value of image used to label the element
 	 */
     @Override
 	public String getImage(Object element, int columnIndex) {
-    	if (columnIndex == PackagesPage.NAME)
+    	if (columnIndex == PkgCellAgent.NAME)
 		    return metaPackage.getIconResource();
-    	else if (columnIndex == PackagesPage.STATUS) {
+    	else if (columnIndex == PkgCellAgent.STATUS) {
             switch(state) {
             case INSTALLED:
             	if (isObsolete())
@@ -150,8 +208,8 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
 
 
 	/**
-	 * Returns the text for the label of the given element.
-	 * @param element Target
+	 * Returns the text for the node label
+	 * @param element Not used
 	 * @param columnIndex The index of the column being displayed
 	 * @return the text string used to label the element, or VOID if there is no text label for the given object
 	 */
@@ -159,25 +217,30 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
 	public String getText(Object element, int columnIndex) {
     	switch (columnIndex)
     	{
-    	case PackagesPage.NAME: 
+    	case PkgCellAgent.NAME: 
     		return decorate(getPkgItemName());
-    	case PackagesPage.API:  
+    	case PkgCellAgent.API:  
     	{
     		AndroidVersion version = getAndroidVersion();
      		return version == null ? VOID : getAndroidVersion().getApiString();
     	}
-    	case PackagesPage.REVISION: 
+    	case PkgCellAgent.REVISION: 
     		// Do use version from path, if available to pick up alpha/beta
     		if (version != VOID)
     			return version;
     		return mainPackage.getVersion().toString();
-    	case PackagesPage.STATUS:   
+    	case PkgCellAgent.STATUS:   
     		return getStatusText();
     	default:
     	}
 		return VOID;
 	}
 
+    /**
+     * Decorate name - only obsolete packages affected
+     * @param pkgItemName Unadorned package name
+     * @return decorated name
+     */
 	private String decorate(String pkgItemName) {
 		if (isObsolete())
 			return pkgItemName + "(obsolete)";
@@ -202,19 +265,19 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
 	}
 
     /**
-     * Mark item as checked according to given criteria. Force uncheck if no criteria specified.
+     * Mark item as checked according to given criteria. Do not change check state if criteria not satisfied.
      * @param selectUpdates If true, select all update packages
      * @param topApiLevel If greater than 0, select platform packages of this api level
       */
     @Override
-	public void checkSelections(
+	public boolean checkSelections(
             boolean selectUpdates,
             int topApiLevel)
 	{
 		boolean hasUpdate = (state == PkgState.INSTALLED) && (updatePackage != null);
 		if (selectUpdates  && hasUpdate) {
 			    setChecked(true);
-			    return;
+			    return true;
 		}
 		if (topApiLevel > 0) {
 			if (hasUpdate || // or new packages excluding system images and previews
@@ -222,14 +285,16 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
     		    AndroidVersion version = getAndroidVersion();
     		    if ((version != null) && (version.getApiLevel() == topApiLevel) && !version.isPreview()) {
     			    setChecked(true);
-    			    return;
+    			    return true;
     			}
 			}
-		} else {
-	 	    setChecked(false);
 		}
+		return false;
 	}
 
+    /**
+     * Mark item as deleted. This is a transient state leading to removal from the view tree
+     */
     @Override
 	public void markDeleted()
 	{
@@ -238,6 +303,9 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
 		updatePackage = null;
 	}
 
+    /**
+     * Returns flag set true if this item is deleted
+     */
     @Override
 	public boolean isDeleted()
 	{
@@ -301,6 +369,11 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
         return result;
     }
 
+    /**
+     * Returns Android version contained in given package type details
+     * @param repoPackage The package 
+     * @return AndroidVersion object or null if type details do not contain Android version
+     */
     @Nullable
     public static AndroidVersion getAndroidVersion(RepoPackage repoPackage) {
         TypeDetails details = repoPackage.getTypeDetails();
@@ -310,6 +383,11 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
         return null;
     }
     
+    /**
+     * Returns flag set true if given package type details contains codename
+     * @param repoPackage The package 
+     * @return boolean
+     */
     public static boolean isPreview(RepoPackage repoPackage) {
         TypeDetails details = repoPackage.getTypeDetails();
         if (details instanceof DetailsTypes.ApiDetailsType) {
@@ -318,6 +396,9 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
         return false;
     }
 
+    /**
+     * Analyse package path to extract product and version
+     */
     private void analysePath() {
 		// Parse package path to separate product from version
     	String path = mainPackage.getPath();
@@ -337,7 +418,10 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
     	}	
 	}
 
-
+    /**
+     * Returns status text
+     * @return String
+     */
     private String getStatusText() {
        switch(state) {
        case INSTALLED:
@@ -361,6 +445,11 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
        return state.toString();
 	}
 
+    /**
+     * Returns tooltip description for given package
+     * @param repoPackage The package
+     * @return String
+     */
     private String getTooltipDescription(RepoPackage repoPackage) {
     	String s = repoPackage.getDisplayName();
     	if (repoPackage instanceof RemotePackage) {
@@ -373,6 +462,12 @@ public class PkgItem extends INode implements Comparable<PkgItem> {
     	return s;
     }
 
+    /**
+     * Returns name of package. Normally package display name but version is removed
+     * to avoid duplication in the displayed details. An exception is made for platforms as
+     * the name from the package is not suitable in this case. 
+     * @return
+     */
     private String getPkgItemName() {
 	    if (metaPackage.getPackageType() == PackageType.platforms)
 	    	return "Platform SDK";

@@ -17,7 +17,7 @@
 package com.android.sdkuilib.internal.repository;
 
 /**
- * User authentication details
+ * User authentication details. Not used - can safely be deleted.
  */
 public class UserCredentials {
     private final String mUserName;

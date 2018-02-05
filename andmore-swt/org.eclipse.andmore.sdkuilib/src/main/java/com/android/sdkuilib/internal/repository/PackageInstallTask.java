@@ -18,49 +18,103 @@
  */
 package com.android.sdkuilib.internal.repository;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
 import org.eclipse.andmore.sdktool.SdkContext;
+import org.eclipse.andmore.sdktool.Utilities;
+import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Shell;
 
-import com.android.repository.api.Installer;
+import com.android.repository.api.ProgressIndicator;
 import com.android.repository.api.RemotePackage;
+import com.android.repository.io.FileOpUtils;
+import com.android.repository.io.impl.FileSystemFileOp;
+import com.android.sdkuilib.internal.repository.content.PackageAnalyser;
 
 /**
+ * Task to prompt user to accept package licenses and then download and install packages.
+ * The task is to be executed in a worker thread such as a job.
  * @author Andrew Bowley
  *
  * 29-11-2017
  */
-public abstract class PackageInstallTask implements ITask, Runnable {
+public class PackageInstallTask {
+	protected static final String DOWNLOAD_PACKAGE = "%s | %s";
 
+	private static final String PACKAGE_INSTALL_FAILED = "Install of package failed due to an error";
+	private static final String PREPARING_INSTALL = "Preparing to install packages";
+	private static final String DIRECTORY_DELETE_REQUIRED = "Directory %s needs to be deleted";
+	private static final String PACKAGES_INSTALLED = "%d package%s installed";
+	private static final String PACKAGE_INSTALL_CANCELLED = "Install cancelled";
+
+	/** SDK context */
     private final SdkContext sdkContext;
+    /** Package manager which performs load and install operations */
 	private final PackageManager packageManager;
-	private final List<RemotePackage> packageList; 
-	private final List<RemotePackage> acceptedRemotes;
-	private int numInstalled;
+	/** Number of packages actually installed */
+	private int installCount;
 	
 	/**
-	 * 
+	 * Construct PackageInstallTask object
+	 * @param sdkContext SDK context
 	 */
-	public PackageInstallTask(SdkContext sdkContext, List<RemotePackage> packageList, List<RemotePackage> acceptedRemotes) {
+	public PackageInstallTask(SdkContext sdkContext) {
 		this.sdkContext = sdkContext;
 		this.packageManager = sdkContext.getPackageManager();
-		this.packageList = packageList;
-		this.acceptedRemotes = acceptedRemotes;
 	}
 
-	public int getNumInstalled() {
-		return numInstalled;
-	}
-
-	/* (non-Javadoc)
-	 * @see com.android.sdkuilib.internal.repository.ITask#run(com.android.sdkuilib.internal.repository.ITaskMonitor)
+	/**
+	 * Returns number of packages actually installed
+	 * @return int
 	 */
-	@Override
-	public void run(ITaskMonitor monitor) {
-    	// Assume installation will proceed instead of complicating the install task
+	public int getinstallCount() {
+		return installCount;
+	}
+
+	/**
+	 * The task
+	 * @param shell Shell of parent control invoking this task
+	 * @param packageList Packages initially selected to be installed
+	 * @param acceptedRemotes Packages which were accepted by the user 
+	 * @param packageInstallListener Callback for install completed events
+	 */
+	public void run(
+			Shell shell,
+			List<RemotePackage> packageList, 
+			List<RemotePackage> acceptedRemotes, 
+			PackageInstallListener packageInstallListener) {
+		// Ensure if installing tools package that the tools directory is deleted if it already exists
+		// This is needed in case a previous failed install attempt left files in the tools directory
+		ProgressIndicator progressIndicator = sdkContext.getProgressIndicator();
+		for (RemotePackage remotePackage: packageList) {
+	    	String name = PackageAnalyser.getNameFromPath(remotePackage.getPath());
+			if (name.equals("tools")) {
+				File toolsDir = new File(sdkContext.getLocation(), "tools");
+				boolean success =  !toolsDir.exists();
+				if (!success) {
+					try {
+				        FileSystemFileOp fop = (FileSystemFileOp)FileOpUtils.create();
+				        fop.deleteFileOrFolder(toolsDir);
+						success = !toolsDir.exists();
+					} catch (SecurityException e) {
+						progressIndicator.logError("Error deleting directory " + toolsDir.toString(), e);
+					}
+				}
+				if (!success) {
+					progressIndicator.logWarning(String.format(DIRECTORY_DELETE_REQUIRED, toolsDir.toString()));
+					return;
+				}
+				break;
+			}
+		}
+    	// Assume installation will proceed  The pre-install operation will take an indeterminate time to complete.
     	sdkContext.getSdkHelper().broadcastPreInstallHook(sdkContext.getSdkLog());
+ 
+    	// Determine which initially selected packages have been rejected
         List<RemotePackage> rejectedRemotes = new ArrayList<>();
         Iterator<RemotePackage> iterator = packageList.iterator();
         while (iterator.hasNext()) {
@@ -70,6 +124,7 @@ public abstract class PackageInstallTask implements ITask, Runnable {
         }
         List<RemotePackage> remotes = new ArrayList<>();
         remotes.addAll(packageList);
+        // Prompt user whether to continue when there are rejects
     	if (!rejectedRemotes.isEmpty()) {
     		String title = "Package licences not accepted";
          	StringBuilder builder = new StringBuilder();
@@ -80,39 +135,56 @@ public abstract class PackageInstallTask implements ITask, Runnable {
         		builder.append('\n').append(iterator2.next().getPath());
             if (!acceptedRemotes.isEmpty()) {
             	builder.append("\n\nContinue installing the remaining packages?");
-            	if (!monitor.displayPrompt(title, 
-                                           builder.toString()))
+                final boolean[] doContinue = new boolean[] { false };
+                Display.getDefault().syncExec(new Runnable() {
+                    @Override
+                    public void run() {
+                    	doContinue[0] = MessageDialog.openQuestion(shell, title, builder.toString());
+                    }});
+            	if (!doContinue[0]) {
             		return;
-                else {
-                	monitor.displayInfo(title, builder.toString());
-            		return;
-                }
+            	} 
+            } else { // No packages left to install
+                Display.getDefault().syncExec(new Runnable() {
+                    @Override
+                    public void run() {
+                         MessageDialog.openInformation(shell, title, builder.toString());
+                    }
+                });
+               return;
             }
             remotes = acceptedRemotes;
     	}
-        final int progressPerPackage = 2 * 100;
-        monitor.setProgressMax(1 + remotes.size() * progressPerPackage);
-        monitor.setDescription("Preparing to install packages");
+    	// Delegate installation of packages, one by one, to PackageManager
+    	progressIndicator.setText(PREPARING_INSTALL);
         for (RemotePackage remotePackage : remotes) {
-            int nextProgress = monitor.getProgress() + progressPerPackage;
-            Installer installer = packageManager.createInstaller(remotePackage);
-            if (packageManager.applyPackageOperation(installer)) {
-            	++numInstalled;
+      	    long fileSize = remotePackage.getArchive().getComplete().getSize();
+        	progressIndicator.setSecondaryText(String.format(
+        		DOWNLOAD_PACKAGE, remotePackage.getDisplayName(),
+        		Utilities.formatFileSize(fileSize)));
+
+            if (packageManager.applyPackageOperation(remotePackage)) {
+            	++installCount;
+            	if (packageInstallListener != null)
+            		packageInstallListener.onPackageInstalled(remotePackage);
             } else {
                 // there was an error, abort.
-                monitor.error(null, "Install of package failed due to an error");
-                monitor.setProgressMax(0);
+            	if (progressIndicator.isCanceled())
+            		progressIndicator.logWarning(PACKAGE_INSTALL_CANCELLED);
+            	else
+            		progressIndicator.logError(PACKAGE_INSTALL_FAILED);
                 break;
             }
-            if (monitor.isCancelRequested()) {
+            if (progressIndicator.isCanceled()) {
                 break;
             }
-            monitor.incProgress(nextProgress - monitor.getProgress());
         }
-        if (numInstalled > 0)
+        if (installCount > 0) { // Perform post install operations
+			sdkContext.reloadLocalPackages();
     	    sdkContext.getSdkHelper().broadcastPostInstallHook(sdkContext.getSdkLog());
-        /* Post package install operations used to give the user an opportuning to restart ADB
-         * and advise check for ADT Updates 
+        }
+        /* Post package install operations no longer used: 
+         * Give the user an opportuning to restart ADB and advise check for ADT Updates 
         if (installedAddon || installedPlatformTools) {
             // We need to restart ADB. Actually since we don't know if it's even
             // running, maybe we should just kill it and not start it.
@@ -127,6 +199,14 @@ public abstract class PackageInstallTask implements ITask, Runnable {
             notifyToolsNeedsToBeRestarted(flags);
         }
         */
+    	if (packageInstallListener != null)
+    		packageInstallListener.onInstallComplete(installCount);
+    	if (installCount > 0) {
+			String plural = installCount > 1 ? "s" : "";
+    		progressIndicator.setSecondaryText(String.format(PACKAGES_INSTALLED,  installCount, plural));
+    	} else if (progressIndicator.isCanceled())
+    		progressIndicator.setSecondaryText(PACKAGE_INSTALL_CANCELLED);
+    	else
+    		progressIndicator.setSecondaryText(PACKAGE_INSTALL_FAILED);
     }
-
 }

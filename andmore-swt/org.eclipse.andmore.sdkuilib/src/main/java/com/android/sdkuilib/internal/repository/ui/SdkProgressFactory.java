@@ -28,22 +28,22 @@ import org.eclipse.swt.widgets.ProgressBar;
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
 import com.android.repository.api.ProgressIndicator;
-import com.android.repository.api.ProgressIndicatorAdapter;
 import com.android.repository.api.ProgressRunner;
 import com.android.sdkuilib.internal.repository.ITask;
 import com.android.sdkuilib.internal.repository.ITaskFactory;
 import com.android.sdkuilib.internal.repository.ITaskMonitor;
 import com.android.sdkuilib.internal.tasks.ILogUiProvider;
-import com.android.sdkuilib.internal.tasks.ProgressTask;
 import com.android.sdkuilib.internal.tasks.ProgressView;
 import com.android.sdkuilib.internal.tasks.SdkProgressIndicator;
 import com.android.utils.ILogger;
 
 /**
- * An {@link ITaskFactory} that creates a new {@link ProgressTask} dialog
- * for each new task.
+ * An {@link ITaskFactory} that creates a new {@link ProgressVeiw} dialog for each new task
+ * @author Andrew Bowley
+ *
+ * 10-01-2018
  */
-public class SdkProgressFactory extends ProgressIndicatorAdapter implements ITaskFactory, ILogger, ProgressRunner {
+public class SdkProgressFactory implements ITaskFactory, ILogger, ProgressRunner, ProgressIndicator {
 
 	public interface ISdkLogWindow
 	{
@@ -56,7 +56,10 @@ public class SdkProgressFactory extends ProgressIndicatorAdapter implements ITas
 	
     private final ProgressView progressView;
     private final ISdkLogWindow logWindow;
+    private SecondaryLog secondaryLog;
     private int referenceCount;
+    // TODO - Implement verbose configuration setting
+    private boolean verboseLogLevel;
 
     /**
      * Creates a new {@link ProgressView} object, a simple "holder" for the various
@@ -75,7 +78,30 @@ public class SdkProgressFactory extends ProgressIndicatorAdapter implements ITas
             ProgressBar progressBar,
             Control stopButton,
 	        ISdkLogWindow logWindow) {
+    	this(statusText, progressBar, stopButton, logWindow, null);
+    }
+    
+    /**
+     * Creates a new {@link ProgressView} object, a simple "holder" for the various
+     * widgets used to display and update a progress + status bar. This object is
+     * provided to the factory.
+     *
+     * @param statusText The label to display titles of status updates (e.g. task titles and
+     *      calls to {@link #setDescription(String)}.) Must not be null.
+     * @param progressBar The progress bar to update during a task. Must not be null.
+     * @param stopButton The stop button. It will be disabled when there's no task that can
+     *      be interrupted. A selection listener will be attached to it. Optional. Can be null.
+     * @param logWindow Log adapter which can be requested to become visible when errors are logged
+     * @param secondaryLog The log to display verbose messages as way of indicating progress
+     */
+    public SdkProgressFactory(
+            Label statusText,
+            ProgressBar progressBar,
+            Control stopButton,
+	        ISdkLogWindow logWindow,
+	        SecondaryLog secondaryLog) {
     	this.logWindow = logWindow;
+    	this.secondaryLog = secondaryLog;
 		this.progressView = new ProgressView(statusText, progressBar, stopButton, getLogUiProvider(logWindow));
 	}
 
@@ -84,7 +110,15 @@ public class SdkProgressFactory extends ProgressIndicatorAdapter implements ITas
     	return progressView;
     }
 
-    /**
+    public boolean isVerboseLogLevel() {
+		return verboseLogLevel;
+	}
+
+	public void setVerboseLogLevel(boolean verboseLogLevel) {
+		this.verboseLogLevel = verboseLogLevel;
+	}
+
+	/**
      * Starts a new task with a new {@link ITaskMonitor}.
      * The task will execute asynchronously in a job.
      * @param title The title of the task, displayed in the monitor if any.
@@ -93,7 +127,7 @@ public class SdkProgressFactory extends ProgressIndicatorAdapter implements ITas
      */
     @Override
     public void start(String title, ITask task, Runnable onTerminateTask) {
-        progressView.startAsyncTask(title, task, onTerminateTask);
+    	 progressView.startAsyncTask(title, task, onTerminateTask);
     }
     
     // Returns object which delegates all logging to the logWindow window
@@ -277,5 +311,70 @@ public class SdkProgressFactory extends ProgressIndicatorAdapter implements ITas
 			}
 		};
 
+	}
+
+	@Override
+	public void setText(String message) {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		taskMonitor.info(message);
+	}
+
+	@Override
+	public boolean isCanceled() {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		return taskMonitor.isCancelRequested();
+	}
+
+	@Override
+	public void cancel() {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		taskMonitor.cancel();
+	}
+
+	@Override
+	public void setCancellable(boolean cancellable) {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		taskMonitor.setCancellable(cancellable);
+	}
+
+	@Override
+	public boolean isCancellable() {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		return taskMonitor.isCancellable();
+	}
+
+	@Override
+	public void setIndeterminate(boolean indeterminate) {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		taskMonitor.setIndeterminate(indeterminate);
+	}
+
+	@Override
+	public boolean isIndeterminate() {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		return taskMonitor.isIndeterminate();
+	}
+
+	@Override
+	public void setFraction(double fraction) {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		taskMonitor.setFraction(fraction);
+	}
+
+	@Override
+	public double getFraction() {
+		ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+		return (double)taskMonitor.getProgress() / (double)taskMonitor.getProgressMax();
+	}
+
+	@Override
+	public void setSecondaryText(String message) {
+		if (secondaryLog != null)
+			// Verbose line is used to show progress
+			secondaryLog.setSecondaryText(message);
+		if (verboseLogLevel) {
+			ITaskMonitor taskMonitor = (ITaskMonitor)progressView;
+			taskMonitor.logVerbose(message);
+		}
 	}
 }

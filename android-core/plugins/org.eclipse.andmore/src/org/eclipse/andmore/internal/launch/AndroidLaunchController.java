@@ -621,7 +621,6 @@ public final class AndroidLaunchController implements IDebugBridgeChangeListener
                 try {
                 	SdkCallAgent callAgent = new SdkCallAgent(
                 			currentSdk.getAndroidSdkHandler(),
-                			currentSdk.getRepoManager(),
                 			IconFactory.getInstance(),
                 			new AdtConsoleSdkLog());
                     // open the chooser dialog. It'll fill 'response' with the device to use

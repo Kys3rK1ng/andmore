@@ -21,7 +21,10 @@ Bundle-ClassPath: .
 Export-Package: com.android.sdkuilib.repository,
  com.android.sdkuilib.ui,
  com.android.sdkuilib.widgets,
- org.eclipse.andmore.sdktool
+ com.android.sdkuilib.wizard,
+ org.eclipse.andmore.sdktool,
+ org.eclipse.andmore.sdktool.install,
+ org.eclipse.andmore.sdktool.preferences
 Import-Package: org.eclipse.ui.plugin
 Bundle-ActivationPolicy: lazy
 Bundle-Activator: org.eclipse.andmore.sdktool.SdkUserInterfacePlugin

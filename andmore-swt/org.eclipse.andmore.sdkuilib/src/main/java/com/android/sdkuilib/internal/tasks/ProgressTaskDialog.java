@@ -551,6 +551,16 @@ final class ProgressTaskDialog extends Dialog implements IProgressUiProvider {
         }
     }
 
+	@Override
+	public void cancel() {
+		Display.getDefault().syncExec(new Runnable(){
+
+			@Override
+			public void run() {
+				 onCancelSelected();
+			}});
+    }
+
     // End of hiding from SWT Designer
     //$hide<<$
 }

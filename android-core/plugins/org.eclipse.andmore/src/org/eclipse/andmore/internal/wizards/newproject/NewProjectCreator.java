@@ -74,6 +74,9 @@ import org.eclipse.jdt.core.IClasspathEntry;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jdt.launching.IVMInstall;
+import org.eclipse.jdt.launching.JavaRuntime;
+import org.eclipse.jdt.launching.LibraryLocation;
 import org.eclipse.jface.dialogs.ErrorDialog;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.operation.IRunnableContext;
@@ -764,6 +767,13 @@ public class NewProjectCreator  {
 
         // Setup class path: mark folders as source folders
         IJavaProject javaProject = JavaCore.create(project);
+        List<IClasspathEntry> entries = new ArrayList<IClasspathEntry>();
+        IVMInstall vmInstall = JavaRuntime.getDefaultVMInstall();
+        LibraryLocation[] locations = JavaRuntime.getLibraryLocations(vmInstall);
+        for (LibraryLocation element : locations) {
+            entries.add(JavaCore.newLibraryEntry(element.getSystemLibraryPath(), null, null));
+        }
+        javaProject.setRawClasspath(entries.toArray(new IClasspathEntry[entries.size()]), null);
         setupSourceFolders(javaProject, sourceFolders, monitor);
 
         if (((Boolean) parameters.get(PARAM_IS_NEW_PROJECT)).booleanValue()) {
@@ -1071,7 +1081,7 @@ public class NewProjectCreator  {
             // Save in the project as UTF-8
             InputStream stream = new ByteArrayInputStream(
                     manifestTemplate.getBytes("UTF-8")); //$NON-NLS-1$
-            file.create(stream, false /* force */, new SubProgressMonitor(monitor, 10));
+            file.create(stream, file.exists() /* force */, new SubProgressMonitor(monitor, 10));
         }
     }
 

@@ -255,7 +255,6 @@ public class SdkManagerAction implements IWorkbenchWindowActionDelegate, IObject
         SdkCallAgent sdkCallAgent = 
         	new SdkCallAgent(
         		sdk.getAndroidSdkHandler(),
-                sdk.getRepoManager(),
                 adtConsoleSdkLog
                 /*
                  {

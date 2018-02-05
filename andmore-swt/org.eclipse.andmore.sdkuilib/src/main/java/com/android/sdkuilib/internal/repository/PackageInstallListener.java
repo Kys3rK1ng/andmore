@@ -18,11 +18,24 @@
  */
 package com.android.sdkuilib.internal.repository;
 
+import com.android.repository.api.RemotePackage;
+
 /**
+ * Callback for to complete packages installation
  * @author Andrew Bowley
  *
  * 30-11-2017
  */
 public interface PackageInstallListener {
-	void onPackagesInstalled(int count);
+	/**
+	 * Handle event package installed
+	 * @param packageInstalled The package
+	 */
+	void onPackageInstalled(RemotePackage packageInstalled);
+	
+	/**
+	 * Handle event install complete
+	 * @param packageCount Number of packages installed
+	 */
+	void onInstallComplete(int packageCount);
 }

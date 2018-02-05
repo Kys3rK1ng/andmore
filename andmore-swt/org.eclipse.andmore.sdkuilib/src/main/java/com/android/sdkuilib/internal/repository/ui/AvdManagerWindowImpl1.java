@@ -19,11 +19,7 @@ package com.android.sdkuilib.internal.repository.ui;
 
 import com.android.SdkConstants;
 import com.android.sdklib.internal.avd.AvdInfo;
-
-import com.android.sdkuilib.repository.ISdkChangeListener;
 import com.android.sdkuilib.internal.repository.AboutDialog;
-import com.android.sdkuilib.internal.repository.MenuBarWrapper;
-import com.android.sdkuilib.internal.repository.SettingsDialog;
 import com.android.sdkuilib.internal.repository.avd.SdkTargets;
 import com.android.sdkuilib.internal.repository.ui.DeviceManagerPage.IAvdCreatedListener;
 import com.android.sdkuilib.repository.SdkUpdaterWindow;
@@ -41,9 +37,12 @@ import org.eclipse.swt.events.DisposeListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Point;
+import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.GridLayout;
+import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
+import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.MenuItem;
 import org.eclipse.swt.widgets.Shell;
@@ -54,21 +53,35 @@ import org.eclipse.swt.widgets.TabItem;
  * This is an intermediate version of the {@link AvdManagerPage}
  * wrapped in its own standalone window for use from the SDK Manager 2.
  */
-public class AvdManagerWindowImpl1 {
+public class AvdManagerWindowImpl1 implements ManagerControls {
 
+	private enum Tab {
+		AVD, 
+		DEVICE
+	}
+	
     private static final String APP_NAME = "Android Virtual Device (AVD) Manager";
-    private static final String APP_NAME_MAC_MENU = "AVD Manager";
     private static final String SIZE_POS_PREFIX = "avdman1"; //$NON-NLS-1$
+    /**
+     * Min Y location for dialog. Need to deal with the menu bar on mac os.
+     */
+    private final static int MIN_Y =
+        SdkConstants.CURRENT_PLATFORM == SdkConstants.PLATFORM_DARWIN ? 20 : 0;
+	private static final String INVALID_INDEX = "Index %d is invalid";
 
     private final Shell mParentShell;
     private final AvdInvocationContext mContext;
     private final SdkContext mSdkContext;
+    private final SelectionAdapter[] refreshListeners = new SelectionAdapter[2];
+    private final SelectionAdapter[] closeListeners = new SelectionAdapter[2];
 
     // --- UI members ---
 
     protected Shell mShell;
     private AvdManagerPage mAvdPage;
     private TabFolder mTabFolder;
+    private Button mRefreshButton;
+    private Button mOkButton;
 
     /**
      * Creates a new window. Caller must call open(), which will block.
@@ -134,10 +147,35 @@ public class AvdManagerWindowImpl1 {
                     display.sleep();
                 }
             }
-            dispose();  //$hide$
         }
     }
 
+	@Override
+	public void enableRefresh(boolean isEnabled) {
+		mRefreshButton.setEnabled(isEnabled);
+	}
+
+	@Override
+	public boolean isRefreshEnabled() {
+		return mRefreshButton.isEnabled();
+	}
+
+	@Override
+	public void addRefreshListener(int index, SelectionAdapter refreshListener) {
+		if ((index == Tab.AVD.ordinal()) || (index == Tab.DEVICE.ordinal()))
+			refreshListeners[index] = refreshListener;
+		else
+			throw new IllegalArgumentException(String.format(INVALID_INDEX, index));
+	}
+
+	@Override
+	public void addCloseListener(int index, SelectionAdapter closeListener) {
+		if ((index == Tab.AVD.ordinal()) || (index == Tab.DEVICE.ordinal()))
+			closeListeners[index] = closeListener;
+		else
+			throw new IllegalArgumentException(String.format(INVALID_INDEX, index));
+	}
+	
     private void createShell() {
         // The AVD Manager must use a shell trim when standalone
         // or a dialog trim when invoked from somewhere else.
@@ -155,7 +193,7 @@ public class AvdManagerWindowImpl1 {
             }
         });
 
-        GridLayout glShell = new GridLayout(2, false);
+        GridLayout glShell = new GridLayout(1, false);
         glShell.verticalSpacing = 0;
         glShell.horizontalSpacing = 0;
         glShell.marginWidth = 0;
@@ -170,9 +208,34 @@ public class AvdManagerWindowImpl1 {
     }
 
     private void createContents() {
-        mTabFolder = new TabFolder(mShell, SWT.NONE);
-        GridDataBuilder.create(mTabFolder).fill().grab().hSpan(2);
-
+        Composite parent = new Composite(mShell, SWT.NONE);
+        GridLayoutBuilder.create(parent).noMargins();
+        mTabFolder = new TabFolder(parent, SWT.NONE);
+        GridDataBuilder.create(mTabFolder).fill().grab();
+        Group buttonBar = new Group(parent, SWT.NONE);
+        GridDataBuilder.create(buttonBar).vCenter().fill().grab();
+        GridLayoutBuilder.create(buttonBar).columns(2);
+        mRefreshButton = new Button(buttonBar, SWT.PUSH | SWT.FLAT);
+        GridDataBuilder.create(mRefreshButton).vCenter().wHint(150).hFill().hGrab().hRight();
+        mRefreshButton.setText("Refresh");
+        mRefreshButton.setToolTipText("Reloads the list");
+        mRefreshButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent event) {
+                doRefresh(event);
+            }
+        });
+    	mOkButton = new Button(buttonBar, SWT.PUSH | SWT.FLAT);
+        GridDataBuilder.create(mOkButton).vCenter().wHint(150).hRight();
+    	mOkButton.setText("OK");
+    	mOkButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent event) {
+            	doClose(event);
+                mShell.close();
+             }
+        });
+    	mShell.setDefaultButton(mOkButton);
         // avd tab
         TabItem avdTabItem = new TabItem(mTabFolder, SWT.NONE);
         avdTabItem.setText("Android Virtual Devices");
@@ -186,12 +249,24 @@ public class AvdManagerWindowImpl1 {
         createDeviceTab(mTabFolder, devTabItem);
     }
 
+	private void doRefresh(SelectionEvent event) {
+		int selection = mTabFolder.getSelectionIndex();
+		if ((selection != -1) && (refreshListeners[selection] != null))
+			refreshListeners[selection].widgetSelected(event);
+	}
+
+	private void doClose(SelectionEvent event) {
+		int selection = mTabFolder.getSelectionIndex();
+		if ((selection != -1) && (closeListeners[selection] != null))
+			closeListeners[selection].widgetSelected(event);
+	}
+
     private void createAvdTab(TabFolder tabFolder, TabItem avdTabItem) {
         Composite root = new Composite(tabFolder, SWT.NONE);
         avdTabItem.setControl(root);
         GridLayoutBuilder.create(root).columns(1);
 
-        mAvdPage = new AvdManagerPage(root, SWT.NONE, mSdkContext);
+        mAvdPage = new AvdManagerPage(root, SWT.NONE, mSdkContext, this);
         GridDataBuilder.create(mAvdPage).fill().grab();
     }
 
@@ -201,7 +276,7 @@ public class AvdManagerWindowImpl1 {
         GridLayoutBuilder.create(root).columns(1);
 
         DeviceManagerPage devicePage =
-            new DeviceManagerPage(root, SWT.NONE, mSdkContext, new SdkTargets(mSdkContext));
+            new DeviceManagerPage(root, SWT.NONE, mSdkContext, new SdkTargets(mSdkContext), (ManagerControls)this);
         GridDataBuilder.create(devicePage).fill().grab();
 
         devicePage.setAvdCreatedListener(new IAvdCreatedListener() {
@@ -242,31 +317,15 @@ public class AvdManagerWindowImpl1 {
                 }
             });
 
-            try {
-                new MenuBarWrapper(APP_NAME_MAC_MENU, menuTools) {
-                    @Override
-                    public void onPreferencesMenuSelected() {
-                        SettingsDialog sd = new SettingsDialog(mShell, mSdkContext);
-                        sd.open();
-                    }
-
-                    @Override
-                    public void onAboutMenuSelected() {
-                        AboutDialog ad = new AboutDialog(mShell, mSdkContext);
-                        ad.open();
-                    }
-
-                    @Override
-                    public void printError(String format, Object... args) {
-                        if (mSdkContext != null) {
-                            mSdkContext.getSdkLog().error(null, format, args);
-                        }
-                    }
-                };
-            } catch (Throwable e) {
-                mSdkContext.getSdkLog().error(e, "Failed to setup menu bar");
-                e.printStackTrace();
-            }
+            MenuItem aboutTools = new MenuItem(menuTools, SWT.NONE);
+            aboutTools.setText("&About...");
+            aboutTools.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent event) {
+                    AboutDialog ad = new AboutDialog(mShell, mSdkContext);
+                    ad.open();
+                }
+            });
         }
     }
 
@@ -275,32 +334,12 @@ public class AvdManagerWindowImpl1 {
     // Hide everything down-below from SWT designer
     //$hide>>$
 
-    // --- Public API -----------
-
-    /**
-     * Adds a new listener to be notified when a change is made to the content of the SDK.
-     */
-    public void addListener(ISdkChangeListener listener) {
-        mSdkContext.getSdkHelper().addListeners(listener);
-    }
-
-    /**
-     * Removes a new listener to be notified anymore when a change is made to the content of
-     * the SDK.
-     */
-    public void removeListener(ISdkChangeListener listener) {
-        mSdkContext.getSdkHelper().removeListener(listener);
-    }
-
     // --- Internals & UI Callbacks -----------
 
     /**
      * Called before the UI is created.
      */
     private void preCreateContent() {
-        mSdkContext.getSdkHelper().setWindowShell(mShell);
-        // Note: we can't create the TaskFactory yet because we need the UI
-        // to be created first, so this is done in postCreateContent().
     }
 
     /**
@@ -312,12 +351,45 @@ public class AvdManagerWindowImpl1 {
     private boolean postCreateContent() {
         setWindowImage(mShell);
 
-        if (!initializeSettings()) {
+        if (!mSdkContext.getSettings().initialize()) {
             return false;
         }
-        // TODO - Consider how to signal SDK loaded
-        //mSdkContext.getSdkHelper().broadcastOnSdkLoaded(mSdkContext.getSdkLog());
+        positionShell();
         return true;
+    }
+
+    /**
+     * Centers the dialog in its parent shell.
+     */
+    private void positionShell() {
+        // Centers the dialog in its parent shell
+        Shell child = mShell;
+        Shell parent = mParentShell;
+        if (child != null && parent != null) {
+            // get the parent client area with a location relative to the display
+            Rectangle parentArea = parent.getClientArea();
+            Point parentLoc = parent.getLocation();
+            int px = parentLoc.x;
+            int py = parentLoc.y;
+            int pw = parentArea.width;
+            int ph = parentArea.height;
+
+            Point childSize = child.getSize();
+            int cw = childSize.x;
+            int ch = childSize.y;
+
+            int x = px + (pw - cw) / 2;
+            if (x < 0) x = 0;
+
+            int y = py + (ph - ch) / 2;
+            if (y < MIN_Y) y = MIN_Y;
+
+            child.setLocation(x, y);
+            child.setSize(cw, ch);
+        }
+        mShell.layout(true, true);
+        final Point newSize = mShell.computeSize(SWT.DEFAULT, SWT.DEFAULT, true);  
+        mShell.setSize(newSize);   
     }
 
     /**
@@ -340,22 +412,8 @@ public class AvdManagerWindowImpl1 {
     }
 
     /**
-     * Called by the main loop when the window has been disposed.
+     * Handle SDK Manager selected
      */
-    private void dispose() {
-        //mSdkContext.getSources().saveUserAddons(mSdkContext.getSdkLog());
-    }
-
-    /**
-     * Initializes settings.
-     * This must be called after addExtraPages(), which created a settings page.
-     * Iterate through all the pages to find the first (and supposedly unique) setting page,
-     * and use it to load and apply these settings.
-     */
-    private boolean initializeSettings() {
-        return mSdkContext.getSettings().initialize(mSdkContext.getSdkLog());
-    }
-
     private void onSdkManager() {
         try {
             SdkUpdaterWindowImpl2 win = new SdkUpdaterWindowImpl2(
@@ -368,4 +426,5 @@ public class AvdManagerWindowImpl1 {
             mSdkContext.getSdkLog().error(e, "SDK Manager window error");
         }
     }
+
 }

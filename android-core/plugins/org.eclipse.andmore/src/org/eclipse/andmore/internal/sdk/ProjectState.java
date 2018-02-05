@@ -25,6 +25,7 @@ import com.android.sdklib.internal.project.ProjectPropertiesWorkingCopy;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.core.resources.IProject;
+import org.eclipse.core.runtime.IPath;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 
@@ -464,7 +465,10 @@ public final class ProjectState {
      */
     public LibraryState needs(ProjectState libraryProject) {
         // compute current location
-        File projectFile = mProject.getLocation().toFile();
+    	IPath location = mProject.getLocation();
+    	if (location == null)
+    		return null;
+        File projectFile = location.toFile();
 
         // get the location of the library.
         File libraryFile = libraryProject.getProject().getLocation().toFile();

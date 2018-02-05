@@ -57,7 +57,8 @@ public class AvdManagerPage extends Composite
      */
     public AvdManagerPage(Composite parent,
             int swtStyle,
-            SdkContext sdkContext) {
+            SdkContext sdkContext,
+            ManagerControls managerControls) {
         super(parent, swtStyle);
 
         mSdkContext = sdkContext;
@@ -66,11 +67,11 @@ public class AvdManagerPage extends Composite
         mDeviceManager = mSdkContext.getDeviceManager();
         mDeviceManager.registerListener(this);
 
-        createContents(this);
+        createContents(this, managerControls);
         postCreate();  //$hide$
     }
 
-    private void createContents(Composite parent) {
+    private void createContents(Composite parent, ManagerControls managerControls) {
         parent.setLayout(new GridLayout(1, false));
 
         Label label = new Label(parent, SWT.NONE);
@@ -86,7 +87,8 @@ public class AvdManagerPage extends Composite
 
         mAvdSelector = new AvdSelector(parent,
         		mSdkContext,
-                AvdDisplayMode.MANAGER);
+                AvdDisplayMode.MANAGER,
+                managerControls);
     }
 
     @Override
@@ -133,7 +135,6 @@ public class AvdManagerPage extends Composite
 
     @Override
     public void onSdkReload() {
-        mAvdSelector.refresh(false /*reload*/);
     }
 
     @Override
@@ -143,7 +144,7 @@ public class AvdManagerPage extends Composite
 
     @Override
     public void postInstallHook() {
-        // nothing to be done for now.
+    	mAvdSelector.refresh(true /*reload*/);
     }
 
     // --- Implementation of DevicesChangeListener

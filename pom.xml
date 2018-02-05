@@ -136,6 +136,11 @@
 					<artifactId>tycho-source-feature-plugin</artifactId>
 					<version>${tycho-version}</version>
 				</plugin>
+                <plugin>
+                    <groupId>org.eclipse.tycho</groupId>  
+                    <artifactId>tycho-versions-plugin</artifactId>  
+                    <version>${tycho-version}</version>  
+                </plugin>     
 				<plugin>
 					<groupId>org.eclipse.tycho.extras</groupId>
 					<artifactId>tycho-document-bundle-plugin</artifactId>
@@ -204,6 +209,10 @@
 				<groupId>org.eclipse.tycho.extras</groupId>
 				<artifactId>tycho-source-feature-plugin</artifactId>
 			</plugin>
+            <plugin>
+                <groupId>org.eclipse.tycho</groupId>  
+                <artifactId>tycho-versions-plugin</artifactId>  
+             </plugin>     
 			<plugin>
 				<groupId>org.eclipse.tycho</groupId>
 				<artifactId>target-platform-configuration</artifactId>
@@ -211,6 +220,7 @@
 					<resolver>p2</resolver>
                     <target> 
                         <artifact>
+                            <!-- Version is hard-coded because of m2e-android modules having different project version -->
                             <groupId>org.eclipse.andmore</groupId>
                             <artifactId>andmore.target</artifactId>
                             <version>${project.version}</version>

@@ -67,8 +67,8 @@ public interface ImageFactory {
 	Image getImageByName(String imageName);
 
 	/**
-	 * Returns an image given its filename (with its extension).
-	 * Might return null if the image cannot be loaded.  <br/>
+	 * Returns an image descriptor given its filename (with its extension).
+	 * Might return null if the image descriptor cannot be loaded.  <br/>
 	 * @param imageName The filename (with extension) of the image to load.
 	 * @return {@link ImageDescriptor} object or null if the image file is not found.
 	 */
@@ -93,14 +93,10 @@ public interface ImageFactory {
 	/**
 	 * Loads an image given its filename (with its extension) and if not found,
 	 * uses supplied {@code ReplacementImager} to create a replacement.
-	 * Might return null if the image cannot be loaded.
-	 * The image is cached. Successive calls using {@code KeyName} will return the <em>same</em>
-	 * object directly<br/>
 	 * <p/>
 	 * @param imageName Filename (with extension) of the image to load.
-	 * @param keyName Image key reference
-	 * @param imageEditor Image editor
-	 * @return {@link Image} or null if the image file is not found. The caller must NOT dispose the image.
+	 * @param replacementImager Provides replacement image
+	 * @return {@link Image}. The caller must NOT dispose the image.
 	 */
 	@Nullable
 	Image getImageByName(String imageName, ReplacementImager replacementImager);

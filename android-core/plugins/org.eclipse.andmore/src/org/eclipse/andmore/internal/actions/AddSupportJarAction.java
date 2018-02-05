@@ -180,7 +180,6 @@ public class AddSupportJarAction implements IObjectActionDelegate {
             return null;
         }
 
-        String sdkLocation = sdk.getSdkOsLocation();
         if (minimumRevision > 0) {
             File path = getSupportJarFile();
             if (path != null) {
@@ -198,11 +197,10 @@ public class AddSupportJarAction implements IObjectActionDelegate {
         // and get the installation path of the library.
         SdkCallAgent callAgent = new SdkCallAgent(
         		sdk.getAndroidSdkHandler(),
-        		sdk.getRepoManager(),
         		new AdtConsoleSdkLog());
         AdtUpdateDialog window = new AdtUpdateDialog(
                 AndmoreAndroidPlugin.getShell(),
-                callAgent);
+                callAgent.getSdkContext());
 
         Pair<Boolean, File> result = window.installExtraPackage(VENDOR_ID, SUPPORT_ID);
 

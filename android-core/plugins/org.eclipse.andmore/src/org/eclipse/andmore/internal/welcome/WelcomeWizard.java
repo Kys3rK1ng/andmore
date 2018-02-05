@@ -54,7 +54,6 @@ import java.util.Set;
  * reject usage data collection, etc
  */
 public class WelcomeWizard extends Wizard {
-    private final DdmsPreferenceStore mStore;
 
     private WelcomeWizardPage mWelcomePage;
 
@@ -68,7 +67,6 @@ public class WelcomeWizard extends Wizard {
      * @param showUsageOptinPage show page to get user consent for usage data collection
      */
     public WelcomeWizard(DdmsPreferenceStore store, boolean showInstallSdkPage) {
-        mStore = store;
         mShowWelcomePage = showInstallSdkPage;
 
         setWindowTitle("Welcome to Android Development");
@@ -168,11 +166,10 @@ public class WelcomeWizard extends Wizard {
         }
         SdkCallAgent callAgent = new SdkCallAgent(
         		sdk.getAndroidSdkHandler(),
-        		sdk.getRepoManager(),
         		new AdtConsoleSdkLog());
         AdtUpdateDialog updater = new AdtUpdateDialog(
                 shell,
-                callAgent);
+                callAgent.getSdkContext());
         // Note: we don't have to specify tools & platform-tools since they
         // are required dependencies of any platform.
         boolean result = updater.installNewSdk(apiLevels);

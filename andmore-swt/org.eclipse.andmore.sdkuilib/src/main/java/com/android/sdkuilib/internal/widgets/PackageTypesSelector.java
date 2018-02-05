@@ -45,7 +45,9 @@ import com.android.sdkuilib.ui.SwtBaseDialog;
  */
 public class PackageTypesSelector extends SwtBaseDialog {
 
-	private static final String WINDOW_TITLE = "Select Package Types";
+	private static final String WINDOW_TITLE = "Filter by Category";
+	private static final String SELECTION_HEADING = "Categories";
+	
 	private static int WINDOW_HEIGHT = 400;
 	private static int WINDOW_WIDTH = 200;
 
@@ -69,14 +71,19 @@ public class PackageTypesSelector extends SwtBaseDialog {
 			
 	};
 	
+	/** User selected set of package types */
 	private Set<PackageType> packageTypeSet = new TreeSet<>();
+	/** Initial set of package types retained to detect if anything has changed */
 	private Set<PackageType> originalPackageTypeSet = new TreeSet<>();
+	// Controls
 	private SelectionAdapter selectionAdapter;
 	private Button buttonOK;
 	private Button buttonCancel;
 	
 	/**
-	 * 
+	 * Create PackageTypesSelector object
+	 * @param shell Parent shell
+	 * @param packageTypeSet Set of package types for initial selection
 	 */
 	public PackageTypesSelector(Shell shell, Set<PackageType> packageTypeSet) {
         super(shell, SWT.APPLICATION_MODAL, WINDOW_TITLE);
@@ -87,6 +94,10 @@ public class PackageTypesSelector extends SwtBaseDialog {
         selectionAdapter = 	getSelectionAdapter();
     }
 
+	/**
+	 * Returns user selected set of package types
+	 * @return PackageType set
+	 */
     public Set<PackageType> getPackageTypeSet() {
 		return packageTypeSet != null ? packageTypeSet : PackageFilter.EMPTY_PACKAGE_TYPE_SET;
 	}
@@ -112,7 +123,7 @@ public class PackageTypesSelector extends SwtBaseDialog {
         GridLayoutBuilder.create(shell).columns(1);
         GridDataBuilder.create(shell).fill();
         Group composite = new Group(shell, SWT.SHADOW_ETCHED_OUT);
-        composite.setText(WINDOW_TITLE);
+        composite.setText(SELECTION_HEADING);
         GridLayoutBuilder.create(composite).margins(2);
         GridDataBuilder.create(composite).hFill().hGrab();
         Display display = composite.getDisplay();
@@ -158,12 +169,23 @@ public class PackageTypesSelector extends SwtBaseDialog {
 	protected void postCreate() {
 	}
 
+	/**
+	 * Returns flag set true if selection has changed
+	 * @return boolean
+	 */
 	private boolean isDirty() {
 		if (packageTypeSet.size() != originalPackageTypeSet.size())
 			return true;
 		return !packageTypeSet.containsAll(originalPackageTypeSet);
 	}
-	
+
+	/**
+	 * Add check button
+	 * @param composite Parent composite
+	 * @param packageType Button package type
+	 * @param isSet Flag set true if package type is selected
+	 * @return
+	 */
 	private Button addCheck(Composite composite, PackageType packageType, boolean isSet) {
         Button check = new Button(composite, SWT.CHECK);
         check.setData(packageType);
@@ -175,6 +197,10 @@ public class PackageTypesSelector extends SwtBaseDialog {
         return check;
 	}
 
+	/**
+	 * Returns check button selection handler
+	 * @return
+	 */
 	private SelectionAdapter getSelectionAdapter() {
 		return new SelectionAdapter() {
 

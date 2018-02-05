@@ -26,9 +26,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 import org.eclipse.andmore.sdktool.SdkContext;
 import org.eclipse.andmore.sdktool.Utilities;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.IJobChangeEvent;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobChangeAdapter;
 import org.eclipse.jface.dialogs.IDialogConstants;
 import org.eclipse.jface.viewers.ISelection;
 import org.eclipse.jface.viewers.IStructuredSelection;
@@ -53,6 +60,7 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Link;
@@ -76,7 +84,9 @@ import com.android.sdkuilib.ui.GridDialog;
 
 
 /**
- * Implements an {@link SdkUpdaterChooserDialog}.
+ * SdkUpdaterChooserDialog presents the user with packages to be
+ * installed and license information to act on by accepting or
+ * rejecting licenses.
  */
 public final class SdkUpdaterChooserDialog extends GridDialog {
 
@@ -101,27 +111,18 @@ public final class SdkUpdaterChooserDialog extends GridDialog {
     private Label mErrorLabel;
     private Set<RemotePackage> unacceptedLicenses = new HashSet<>();
 
+    /** SDK context */
     private final SdkContext mSdkContext;
-    /**
-     * List of all archives to be installed with dependency information.
-     * <p/>
-     * Note: in a lot of cases, we need to find the archive info for a given archive. This
-     * is currently done using a simple linear search, which is fine since we only have a very
-     * limited number of archives to deal with (e.g. < 10 now). We might want to revisit
-     * this later if it becomes an issue. Right now just do the simple thing.
-     * <p/>
-     * Typically we could add a map Package=>PackageInfo later.
-     */
-    private final List<PackageInfo> mPackages = new ArrayList<>();
-
-
+    /** Set of all packages to be installed with dependency information. */
+    private final Set<PackageInfo> mPackages = new TreeSet<>();
 
     /**
      * Create the dialog.
      *
-     * @param parentShell The shell to use, typically updaterData.getWindowShell()
-     * @param SdkContext The updater data
-     * @param packages The packages to be installed
+     * @param parentShell The shell of the parent control which invoked this dialog
+     * @param SdkContext SDK context
+     * @param updates The update information as a collection of UpdatablePackage objects
+     * @param packages All packages to be installed, including those for updates
      */
     public SdkUpdaterChooserDialog(Shell parentShell,
             SdkContext SdkContext,
@@ -129,6 +130,7 @@ public final class SdkUpdaterChooserDialog extends GridDialog {
             List<RemotePackage> newPackages) {
         super(parentShell, 3, false/*makeColumnsEqual*/);
         mSdkContext = SdkContext;
+        // Process updates first so it is possible to differentiate between new packages and replacements
         init(updates);
         init(newPackages);
     }
@@ -492,81 +494,110 @@ public final class SdkUpdaterChooserDialog extends GridDialog {
         RemotePackage remotePackage = packageInfo.getNewPackage();
         // Add revision if not in path
         addText(getName(remotePackage), "\n\n"); //$NON-NLS-1$
+        // Collect remaining details in job as it involves processing package dependencies
+		StringBuilder description = new StringBuilder();
+		StringBuilder dependencies = new StringBuilder();
+        Job job = new Job("Collect package information"){
 
-        LocalPackage localPackage = packageInfo.getReplaced();
-        if (localPackage != null) {
-            AndroidVersion vOld = PackageAnalyser.getAndroidVersion(localPackage);
-            AndroidVersion vNew = PackageAnalyser.getAndroidVersion(remotePackage);
-            boolean showRev = (vOld != null) && (vNew != null);
+			@Override
+			protected IStatus run(IProgressMonitor arg0) {
+				try {
+			        LocalPackage localPackage = packageInfo.getReplaced();
+			        if (localPackage != null) {
+			            AndroidVersion vOld = PackageAnalyser.getAndroidVersion(localPackage);
+			            AndroidVersion vNew = PackageAnalyser.getAndroidVersion(remotePackage);
+			            boolean showRev = (vOld != null) && (vNew != null);
 
-            if (showRev && !vOld.equals(vNew)) {
-                // Versions are different, so indicate more than just the revision.
-                addText(String.format("This update will replace API %1$s revision %2$s with API %3$s revision %4$s.\n\n",
-                        vOld.getApiString(), localPackage.getVersion(),
-                        vNew.getApiString(), remotePackage.getVersion()));
-                showRev = false;
+			            if (showRev && !vOld.equals(vNew)) {
+			                // Versions are different, so indicate more than just the revision.
+			            	description.append(
+			                    String.format("This update will replace API %1$s revision %2$s with API %3$s revision %4$s.\n\n",
+			                        vOld.getApiString(), localPackage.getVersion(),
+			                        vNew.getApiString(), remotePackage.getVersion()));
+			                showRev = false;
+			            }
+			            if (showRev) {
+			            	description.append(
+			                    String.format("This update will replace revision %1$s with revision %2$s.\n\n",
+			                		localPackage.getVersion(),
+			                		remotePackage.getVersion()));
+			            }
+			        }
+			        List<RemotePackage> required = InstallerUtil.computeRequiredPackages(
+			                Collections.singletonList(remotePackage), mSdkContext.getPackages(),
+			                mSdkContext.getProgressIndicator());
+			        if ((required != null && required.size() > 0)) {
+			        	// Remove principal and duplicates
+			        	Iterator<RemotePackage> iterator = required.iterator();
+			            Set<RemotePackage> existenceSet = new HashSet<>();
+			            existenceSet.add(remotePackage);
+			            List<RemotePackage> filteredRequired = new ArrayList<>();
+			            while (iterator.hasNext()) {
+			            	RemotePackage requiredPackage = iterator.next();
+			            	if (!existenceSet.contains(requiredPackage)) {
+			            		{
+			            			existenceSet.add(requiredPackage);
+			            			filteredRequired.add(requiredPackage);
+			            		}
+			            	}
+			            }
+			            // Remove references now existenceSet no longer needed
+			            existenceSet.clear();
+			        	if ((filteredRequired.size() > 0)) {
+				            dependencies.append("Installing this package also requires installing:");
+				            for (RemotePackage dependency : filteredRequired) {
+				            	dependencies.append(String.format("\n- %1$s", SdkUpdaterChooserDialog.this.getName(dependency)));
+				            }
+				            dependencies.append("\n\n");
+				            /*
+				            if (ai.isDependencyFor()) {
+				                addText("This package is a dependency for:");
+				                for (PackageInfo ai2 : ai.getDependenciesFor()) {
+				                    addText(String.format("\n- %1$s",
+				                            ai2.getShortDescription()));
+				                }
+				                addText("\n\n");
+				            }
+				            */            
+			        	}
+			        }
+				} catch (Exception e) {
+					mSdkContext.getSdkLog().error(e, "Error while collecting package information");
+				}
+				return Status.OK_STATUS;
+			}};
+		job.setPriority(Job.INTERACTIVE);
+		job.addJobChangeListener(new JobChangeAdapter(){
+            @Override
+            public void done(IJobChangeEvent event) {
+            	Display.getDefault().syncExec(new Runnable(){
+
+					@Override
+					public void run() {
+		            	addText(description.toString());
+		            	if (dependencies.length() > 0) {
+			                addSectionTitle("Dependencies\n");
+			                addText(dependencies.toString());
+		            	}
+		                addSectionTitle("Archive Size\n");
+		          	    long fileSize = remotePackage.getArchive().getComplete().getSize();
+		                addText(String.format("Size: %1$s", Utilities.formatFileSize(fileSize)), "\n\n");
+
+		                License license = remotePackage.getLicense();
+		                if (license != null) {
+		                	addSectionTitle(String.format("License %s:%n", license.getId()));
+		                    addText(license.getValue().trim(), "\n\n");
+		                }
+
+		                addSectionTitle("Site\n");
+		                RepositorySource source = remotePackage.getSource();
+		                if (source != null) {
+		                    addText(source.getDisplayName());
+		                }
+					}});
             }
-            if (showRev) {
-                addText(String.format("This update will replace revision %1$s with revision %2$s.\n\n",
-                		localPackage.getVersion(),
-                		remotePackage.getVersion()));
-            }
-        }
-        List<RemotePackage> required = InstallerUtil.computeRequiredPackages(
-                Collections.singletonList(remotePackage), mSdkContext.getPackages(),
-                mSdkContext.getProgressIndicator());
-        if ((required != null && required.size() > 0)) {
-        	// Remove principal and duplicates
-        	Iterator<RemotePackage> iterator = required.iterator();
-            Set<RemotePackage> existenceSet = new HashSet<>();
-            existenceSet.add(remotePackage);
-            List<RemotePackage> filteredRequired = new ArrayList<>();
-            while (iterator.hasNext()) {
-            	RemotePackage requiredPackage = iterator.next();
-            	if (!existenceSet.contains(requiredPackage)) {
-            		{
-            			existenceSet.add(requiredPackage);
-            			filteredRequired.add(requiredPackage);
-            		}
-            	}
-            }
-            // Remove references now existenceSet no longer needed
-            existenceSet.clear();
-        	if ((filteredRequired.size() > 0)) {
-                addSectionTitle("Dependencies\n");
-	            addText("Installing this package also requires installing:");
-	            for (RemotePackage dependency : filteredRequired) {
-	                addText(String.format("\n- %1$s", getName(dependency)));
-	            }
-	            addText("\n\n");
-	/*
-	            if (ai.isDependencyFor()) {
-	                addText("This package is a dependency for:");
-	                for (PackageInfo ai2 : ai.getDependenciesFor()) {
-	                    addText(String.format("\n- %1$s",
-	                            ai2.getShortDescription()));
-	                }
-	                addText("\n\n");
-	            }
-	*/            
-        	}
-        }
-
-        addSectionTitle("Archive Size\n");
-  	    long fileSize = remotePackage.getArchive().getComplete().getSize();
-        addText(Utilities.formatFileSize(fileSize), "\n\n");                             //$NON-NLS-1$
-
-        License license = remotePackage.getLicense();
-        if (license != null) {
-        	addSectionTitle(String.format("License %s:%n", license.getId()));
-            addText(license.getValue().trim(), "\n\n");                                   //$NON-NLS-1$
-        }
-
-        addSectionTitle("Site\n");
-        RepositorySource source = remotePackage.getSource();
-        if (source != null) {
-            addText(source.getDisplayName());
-        }
+        });
+		job.schedule();
     }
 
     /**
@@ -1011,7 +1042,7 @@ public final class SdkUpdaterChooserDialog extends GridDialog {
      * @return A list of {@link LicenseEntry}, each containing a list of {@link PackageInfo}.
      */
     @NonNull
-    private List<LicenseEntry> createTreeInput(@NonNull List<PackageInfo> packageInfoList) {
+    private List<LicenseEntry> createTreeInput(@NonNull Set<PackageInfo> packageInfoList) {
         // Build an ordered map with all the licenses, ordered by license ref name.
         final String noLicense = "No license";      //NLS
 
@@ -1057,8 +1088,11 @@ public final class SdkUpdaterChooserDialog extends GridDialog {
 
     private void init(List<RemotePackage> newPackages) {
         Iterator<RemotePackage> iterator = newPackages.iterator();
-        while(iterator.hasNext())
-            mPackages.add(new PackageInfo(iterator.next()));
+        while(iterator.hasNext()) {
+        	PackageInfo packageInfo = new PackageInfo(iterator.next());
+        	if (!mPackages.contains(packageInfo))
+        		mPackages.add(packageInfo);
+        }
 	}
 
 	private void init(Collection<UpdatablePackage> updates) {

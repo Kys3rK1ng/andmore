@@ -35,25 +35,35 @@ import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
 import com.android.utils.ILogger;
 
+/**
+ * Loads bundle images 
+ * Images are loaded using a path relative to the bundle location.
+ * <p/>
+ * Instances are mangaged by a JFace resource manager, and thus should never be disposed by the image consumer.
+ * Uses a Bundle either directly or indirectly via PluginResourceProvider to locate image files. The  resource manager
+ * should be disposed when the bundle is stopped.
+ * <p/>
+ * Images obtained by name are to be located in directory named by manifest constant ICONS_PATH.
+ * @author Andrew Bowley
+ *
+ * 30-12-2017
+ */
 public class JFaceImageLoader implements ImageFactory {
 
     /** Image file location when using {@link #getImageByName(String)} */
     public static String ICONS_PATH = "icons/";
-    
+
+    /** The bundle containing image files. This is null if provider is not null and vice versa. */
     protected Bundle bundle;
+    /** Hides a bundle which contains image files. The bundle provides ImageDescriptor objects. */
     protected PluginResourceProvider provider;
+    /** Maps keys to generated filter image descriptors */
     protected final Map<String, ImageDescriptor> filterMap = new HashMap<>();
+    /** The JFace resource manager which creates and caches images */
     protected ResourceManager resourceManager;
+    /** Logger (optional) */
     protected ILogger logger;
 	
-	/**
-	 * Loads bundle images 
-	 * Images are loaded using a path relative to the bundle location.
-	 *
-	 * Instances are mangaged by a JFace resource manager, and thus should never be disposed by the image consumer.
-	 *
-	 */
-
 	/**
      * Construct an ImageLoader object using given UI plugin instance.
      * This object provides imageDescriptorFromPlugin() method
@@ -84,11 +94,16 @@ public class JFaceImageLoader implements ImageFactory {
 		this(FrameworkUtil.getBundle(bundleClass));
 	}
 
+	/**
+	 * Set the logger 
+	 * @param logger Android logger
+	 */
 	public void setLogger(ILogger logger) {
 		this.logger = logger;
 	}
 	
-   /* (non-Javadoc)
+   /**
+    * getImageByName 
     * @see org.eclipse.andmore.base.resources.ImageFactory#getImageByName(java.lang.String)
     */
     @Override
@@ -98,7 +113,8 @@ public class JFaceImageLoader implements ImageFactory {
     }
 
 
-    /* (non-Javadoc)
+    /**
+     * getImageByName using given key and image editor
 	 * @see org.eclipse.andmore.base.resources.ImageFactory#getImageByName(java.lang.String, java.lang.String, org.eclipse.andmore.base.resources.JFaceImageLoader.ImageEditor)
 	 */
     @Override
@@ -112,11 +128,12 @@ public class JFaceImageLoader implements ImageFactory {
     	Image image = null;
     	ImageDescriptor imageDescriptor = descriptorFromPath(imagePath);
      	if (imageDescriptor != null) {
+     		// The filter image descriptor is cached in the filter map
      		ImageDescriptor imagefilterDescriptor = filterMap.get(keyName);
      		if (imagefilterDescriptor == null) {
      			// Assume filter input = output
  				imagefilterDescriptor = imageDescriptor;
-         		image = resourceManager.createImage(imageDescriptor);
+         		image = getResourceManager().createImage(imageDescriptor);
      			ImageData imageData = imageEditor.edit(image);
      			if (imageData !=  null) {
      				// Create new image from data
@@ -126,12 +143,13 @@ public class JFaceImageLoader implements ImageFactory {
      			filterMap.put(keyName, imagefilterDescriptor);
      		}
      		else
-         		image = resourceManager.createImage(imagefilterDescriptor);
+         		image = getResourceManager().createImage(imagefilterDescriptor);
      	}
     	return image;
     }
 
-    /* (non-Javadoc)
+    /**
+     * getImage using image path
 	 * @see org.eclipse.andmore.base.resources.ImageFactory#getImage(java.lang.String)
 	 */
     @Override
@@ -139,14 +157,15 @@ public class JFaceImageLoader implements ImageFactory {
     	Image image = null;
     	ImageDescriptor imageDescriptor = descriptorFromPath(imagePath);
      	if (imageDescriptor != null)  {
-    		image = resourceManager.createImage(imageDescriptor);
+    		image = getResourceManager().createImage(imageDescriptor);
     		if ((image == null) && (logger != null))
     			logger.error(null, "Image creation failed for image path " + imagePath);
      	}
         return image;
     }
 
-     /* (non-Javadoc)
+    /**
+     * dispose
 	 * @see org.eclipse.andmore.base.resources.ImageFactory#dispose()
 	 */
     @Override
@@ -158,12 +177,21 @@ public class JFaceImageLoader implements ImageFactory {
             resourceManager = null;
         }
     }
-    
+ 
+	/**
+	 * Loads an image given its filename (with its extension) and if not found,
+	 * uses supplied {@code ReplacementImager} to create a replacement.
+	 * <p/>
+	 * @param imageName Filename (with extension) of the image to load.
+	 * @param replacementImager Provides replacement image
+	 * @return {@link Image}. The caller must NOT dispose the image.
+	 */
 	@Override
 	@Nullable
 	public Image getImageByName(String imageName, ReplacementImager replacementImager) {
     	String imagePath = ICONS_PATH + imageName;
     	ImageDescriptor imageDescriptor = descriptorFromPath(imagePath);
+    	getResourceManager();
      	if (imageDescriptor == null) {
 			ImageDescriptor replacementImageDescriptor = filterMap.get(imagePath);
 			if (replacementImageDescriptor == null) {
@@ -175,6 +203,12 @@ public class JFaceImageLoader implements ImageFactory {
 		return resourceManager.createImage(imageDescriptor);
 	}
 
+	/**
+	 * Returns an image descriptor given its filename (with its extension).
+	 * Might return null if the image descriptor cannot be loaded.  <br/>
+	 * @param imageName The filename (with extension) of the image to load.
+	 * @return {@link ImageDescriptor} object or null if the image file is not found.
+	 */
 	@Override
 	@Nullable
 	public ImageDescriptor getDescriptorByName(String imageName) {
@@ -182,6 +216,11 @@ public class JFaceImageLoader implements ImageFactory {
     	return descriptorFromPath(imagePath);
 	}
 
+	/**
+	 * Returns image descriptor for given image path
+	 * @param imagePath The image path (relative to bundle location)
+	 * @return ImageDescriptor object
+	 */
 	protected ImageDescriptor descriptorFromPath(String imagePath) {
 		if (provider != null) {
 			ImageDescriptor descriptor = provider.descriptorFromPath(imagePath);
@@ -207,23 +246,43 @@ public class JFaceImageLoader implements ImageFactory {
     }
     
     /**
-     * Returns local Resource Manager
+     * Returns local Resource Manager, creating it if it does not exist
      * @return ResourceManager object
      */
     protected void createResourceManager() {
-        if (resourceManager == null)
-            Display.getDefault().syncExec(new Runnable() {
-                
-                @Override
-                public void run() 
-                {
-                    // getResources() returns the ResourceManager for the current display. 
-                    // May only be called from a UI thread.
-                    resourceManager = new LocalResourceManager(JFaceResources.getResources());
-                }
-            });
+        if (resourceManager == null) {
+        	// Thread safe creation of resource manager
+        	synchronized(this) {
+				if (resourceManager == null)  {
+					Runnable createLocalResourceManagerTask = new Runnable() {
+		                
+		                @Override
+		                public void run() 
+		                {
+		                    // getResources() returns the ResourceManager for the current display. 
+		                    // May only be called from a UI thread.
+		                	ResourceManager resources = JFaceResources.getResources();
+		                    resourceManager = new LocalResourceManager(resources);
+		                }
+		            };
+					if (Display.getCurrent() == null)
+						Display.getDefault().syncExec(createLocalResourceManagerTask);
+					else
+						createLocalResourceManagerTask.run();
+				}
+        	}
+        }
      }
 
-
+    /**
+     * Returns local Resource Manager, creating it if it does not exist
+     * @return ResourceManager object
+     */
+    private ResourceManager getResourceManager() {
+        if (resourceManager == null) {
+        	createResourceManager();
+        }
+        return resourceManager;
+    }
 
 }

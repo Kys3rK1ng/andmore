@@ -17,6 +17,17 @@ package org.eclipse.andmore.base.resources;
 
 import org.eclipse.jface.resource.ImageDescriptor;
 
+/**
+ * Hides a bundle which contains image files. The bundle provides ImageDescriptor objects.
+ * @author Andrew Bowley
+ *
+ * 30-12-2017
+ */
 public interface PluginResourceProvider {
+	/**
+	 * Return s image descriptor for given image path
+	 * @param imagePath Image path (relative to bundle location and no leading "/" or ".")
+	 * @return ImageDescriptor object
+	 */
 	ImageDescriptor descriptorFromPath(String imagePath);
 }

@@ -49,6 +49,14 @@ public class SdkUserInterfacePlugin extends AbstractUIPlugin {
     }
     
 	/**
+	 * Returns an image descriptor for the image file at the given plug-in
+	 * relative path
+	 */
+	public ImageDescriptor getImageDescriptor(String path) {
+		return imageDescriptorFromPlugin(PLUGIN_ID, path);
+	}
+
+	/**
 	 * Starts up this plug-in.
 	 * <p>
 	 * This method should be overridden in subclasses that need to do something
@@ -143,12 +151,5 @@ public class SdkUserInterfacePlugin extends AbstractUIPlugin {
 		super.stop(context);
 	}
 
-	/**
-	 * Returns an image descriptor for the image file at the given plug-in
-	 * relative path
-	 */
-	public static ImageDescriptor getImageDescriptor(String path) {
-		return imageDescriptorFromPlugin(PLUGIN_ID, path);
-	}
 
 }

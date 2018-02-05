@@ -21,8 +21,11 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.Set;
 
-import org.eclipse.andmore.sdktool.SdkCallAgent;
 import org.eclipse.andmore.sdktool.SdkContext;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.StyleRange;
 import org.eclipse.swt.custom.StyledText;
@@ -37,6 +40,7 @@ import org.eclipse.swt.widgets.ProgressBar;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Widget;
 
+import com.android.annotations.NonNull;
 import com.android.repository.api.ProgressRunner;
 import com.android.repository.api.RemotePackage;
 import com.android.repository.api.RepoManager.RepoLoadedCallback;
@@ -61,73 +65,76 @@ import com.android.utils.ILogger;
 import com.android.utils.Pair;
 
 /**
- * TODO - Integrate this class with SdkUpdaterWindow
- * This is a private implementation of UpdateWindow for ADT,
- * designed to install a very specific package.
- * <p/>
- * Example of usage:
- * <pre>
- * AdtUpdateDialog dialog = new AdtUpdateDialog(
- *     AdtPlugin.getDisplay().getActiveShell(),
- *     new AdtConsoleSdkLog(),
- *     sdk.getSdkLocation());
- *
- * Pair<Boolean, File> result = dialog.installExtraPackage(
- *     "android", "compatibility");  //$NON-NLS-1$ //$NON-NLS-2$
- * or
- * Pair<Boolean, File> result = dialog.installPlatformPackage(11);
- * </pre>
+ * AdtUpdateDialog installs packages semi-automatically according to pre-determine criteria. 
+ * The user does not select packages but still has to accept licenses. The only controls
+ * are a text console and a progress bar.
  */
 public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
 
+	/** Text console fonts */
     private enum TextStyle {
         DEFAULT,
         TITLE,
         ERROR
     }
     
+    /** The platform API level special value for select highest API level available on the remote repository */
     public static final int USE_MAX_REMOTE_API_LEVEL = 0;
 
     private static final String APP_NAME = "Android SDK Manager";
+    
+    /** The SDK context */
     private final SdkContext mSdkContext;
+    /** Builds and maintains a SDK packages tree */
     private final PackageAnalyser mPackageAnalyser;
-    PackageInstaller packageInstaller;
-
+    /** Installs specified packages and their dependencies */
+    private PackageInstaller packageInstaller;
+    /** Active package filter */
     private PackageVisitor mPackageFilter;
 
+    // The controls
     private ProgressBar mProgressBar;
     private Label mStatusText;
     private StyledText mStyledText;
     private Button mCloseButton;
+    private int installCount;
+    private SdkProgressFactory factory;
 
+    /** Package install handler */
     private PackageInstallListener onIdle = new PackageInstallListener(){
 
+    	/** Handle install complate event */
 		@Override
-		public void onPackagesInstalled(int count) {
+		public void onInstallComplete(int count) {
+			// Record number of packages installed
+			installCount = count;
+			// Turn progress bar Stop button into Close button
 			enableClose();
+		}
+
+		/** Handle package installed event */
+		@Override
+		public void onPackageInstalled(RemotePackage packageInstalled) {
+			// Write details to console
+			factory.getProgressControl().setDescription(String.format("Installed package %s", packageInstalled.getDisplayName()));
 		}
     };
 
     /**
-     * Creates a new {@link AdtUpdateDialog}.
-     * Callers will want to call {@link #installExtraPackage} or
-     * {@link #installPlatformPackage} after this.
-     *
-     * @param parentShell The existing parent shell. Must not be null.
-     * @param sdkCallAgent Mediator between application and UI layer
+     * Construct a {@link AdtUpdateDialog} object
+     * @param parentShell The existing parent shell.
+     * @param sdkContext SDK context
       */
     public AdtUpdateDialog(
-            Shell parentShell,
-            SdkCallAgent sdkCallAgent) {
+            @NonNull Shell parentShell,
+            SdkContext sdkContext) {
         super(parentShell, SWT.NONE, APP_NAME);
-        mSdkContext = sdkCallAgent.getSdkContext();
-        mPackageAnalyser = new PackageAnalyser(mSdkContext);
-
+        mSdkContext = sdkContext;
+        mPackageAnalyser = new PackageAnalyser(sdkContext);
     }
 
     /**
-     * Displays the update dialog and triggers installation of the requested platform
-     * package with the specified API  level.
+     * Installs the requested platform package with the specified API level.
      * <p/>
      * Callers must not try to reuse this dialog after this call.
      *
@@ -141,11 +148,8 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
      */
     public Pair<Boolean, File> installPlatformPackage(int apiLevel) {
         mPackageFilter = createPlatformFilter(apiLevel);
-        open();
-        boolean success = packageInstaller != null;
-        if (success) {
-        	success = packageInstaller.getNumInstalled() > 0;
-        }
+        installCount = 0;
+        boolean success = open() && (installCount > 0);
         File installPath = null;
         if (success) {
             for (PkgItem entry : packageInstaller.getRequiredPackageItems()) {
@@ -159,7 +163,7 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
     }
 
     /**
-     * Displays the update dialog and triggers installation of the requested {@code extra}
+     * Installs the requested {@code extra}
      * package with the specified vendor and path attributes.
      * <p/>
      * Callers must not try to reuse this dialog after this call.
@@ -174,10 +178,11 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
      */
     public Pair<Boolean, File> installExtraPackage(String vendor, String path) {
         mPackageFilter = createExtraFilter(vendor, path);
+        installCount = 0;
         open();
         boolean success = packageInstaller != null;
         if (success) {
-        	success = packageInstaller.getNumInstalled() > 0;
+        	success = installCount > 0;
         }
         File installPath = null;
         if (success) {
@@ -192,7 +197,30 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
     }
 
     /**
-     * Displays the update dialog and triggers installation of platform-tools package.
+     * Intalls package specified by package path
+     * @param packagePath The package path
+     * @return A boolean indicating whether the installation was successful (meaning the package
+     *   was either already present, or got installed or updated properly) and a {@link File}
+     *   with the path to the root folder of the package. The file is null when the boolean
+     *   is false, otherwise it should point to an existing valid folder.
+     */
+	public  Pair<Boolean, File> installPackage(String packagePath) {
+		mPackageFilter = createPackageFilter(packagePath);
+		installCount = 0;
+        open();
+        boolean success = packageInstaller != null;
+        if (success) {
+        	success = installCount > 0;
+        }
+        File installPath = null;
+        if (success) {
+            installPath = new File(mSdkContext.getLocalPath(), packagePath.replaceAll(";", "/"));
+        }
+        return Pair.of(success, installPath);
+	}
+	
+    /**
+     * Intalls platform-tools package.
      * <p/>
      * Callers must not try to reuse this dialog after this call.
      *
@@ -204,10 +232,11 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
      */
     public Pair<Boolean, File> installPlatformTools() {
         mPackageFilter = createPlatformToolsFilter();
+        installCount = 0;
         open();
         boolean success = packageInstaller != null;
         if (success) {
-        	success = packageInstaller.getNumInstalled() > 0;
+        	success = installCount > 0;
         }
         File installPath = null;
         if (success) {
@@ -218,13 +247,11 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
                 }
             }
         }
-
         return Pair.of(success, installPath);
     }
 
     /**
-     * Displays the update dialog and triggers installation of a new SDK. This works by
-     * requesting a remote platform package with the specified API levels as well as
+     * Intalls a new SDK. This works by requesting a remote platform package with the specified API levels as well as
      * the first tools or platform-tools packages available.
      * <p/>
      * Callers must not try to reuse this dialog after this call.
@@ -237,14 +264,18 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
      */
     public boolean installNewSdk(Set<Integer> apiLevels) {
         mPackageFilter = createNewSdkFilter(apiLevels);
+        installCount = 0;
         open();
         boolean success = packageInstaller != null;
         if (success) {
-        	success = packageInstaller.getNumInstalled() > 0;
+        	success = installCount > 0;
         }
         return success;
     }
 
+    /**
+     * Create controls
+     */
     @Override
     protected void createContents() {
         Shell shell = getShell();
@@ -287,9 +318,13 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
         GridDataBuilder.create(mProgressBar).hFill().hGrab();
     }
 
+    /**
+     * Complete dialog creation after controls creation. This launches a task to load packages and
+     * then install the requested package(s).
+     */
     @Override
     protected void postCreate() {
-        SdkProgressFactory factory = new SdkProgressFactory(mStatusText, mProgressBar, mCloseButton, this);
+        factory = new SdkProgressFactory(mStatusText, mProgressBar, mCloseButton, this);
         initializeSettings();
         if (mSdkContext.hasError())
         {
@@ -302,27 +337,43 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
         }
         mSdkContext.setSdkLogger(factory);
         mSdkContext.setSdkProgressIndicator(factory);
+        // Error handler for asynchronous package load
 		Runnable onError = new Runnable(){
 			@Override
 			public void run() {
 				enableClose();
 				factory.getProgressControl().setDescription("Package operation did not complete due to error or cancellation");
 			}};
+	     // Success handler for asynchronous package load
     	RepoLoadedCallback onSuccess = new RepoLoadedCallback(){
 			@Override
 			public void doRun(RepositoryPackages packages) {
                 if (!getShell().isDisposed()) 
                 {
-                	mSdkContext.getPackageManager().setPackages(packages);
-                	mPackageAnalyser.loadPackages();
-            		packageInstaller = new PackageInstaller(mPackageAnalyser, mPackageFilter, factory);
-            		if (packageInstaller.getRequiredPackageItems().isEmpty()) {
-            			// No packages were selected
-            			onError.run();
-            			return;
-            		}
-                 	factory.getProgressControl().setDescription("Done loading packages.");
-                	packageInstaller.installPackages(getShell(), mSdkContext, onIdle);
+                	// Do package install as job 
+                    Job job = new Job("Install packages") {
+                        @Override
+                        protected IStatus run(IProgressMonitor m) {
+                        	try {
+			                	mSdkContext.getPackageManager().setPackages(packages);
+			                	mPackageAnalyser.loadPackages();
+			            		packageInstaller = new PackageInstaller(mPackageAnalyser, mPackageFilter, factory);
+			            		if (packageInstaller.getRequiredPackageItems().isEmpty()) {
+			            			// No packages were selected
+			            			onError.run();
+			            			return Status.OK_STATUS;
+			            		}
+			                 	factory.getProgressControl().setDescription("Done loading packages.");
+			                	packageInstaller.installPackages(getShell(), mSdkContext, onIdle);
+						    	return Status.OK_STATUS;
+                        	} catch (Exception e) {
+                        		mSdkContext.getSdkLog().error(e, "Error while installing packages");
+                        		return Status.CANCEL_STATUS;
+                        	}
+                        }
+                    };
+                    job.setPriority(Job.INTERACTIVE);
+                    job.schedule();
                 }
 			}};
         loadPackages(factory, onSuccess, onError);
@@ -393,8 +444,8 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
      * and use it to load and apply these settings.
      */
     private boolean initializeSettings() {
-    	Settings settings = new Settings();
-        if (settings.initialize(mSdkContext.getSdkLog()))
+    	Settings settings = new Settings(mSdkContext.getSdkLog());
+        if (settings.initialize())
         {
         	mSdkContext.setSettings(settings);
         	return true;
@@ -402,6 +453,12 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
         return false;
     }
 
+    /**
+     * Returns filter for an extras type package
+     * @param vendor The package vendor 
+     * @param path The package path
+     * @return PackageVisitor object
+     */
     public static PackageVisitor createExtraFilter(
             final String vendor,
             final String path) {
@@ -428,6 +485,10 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
         };
     }
 
+    /**
+     * Returns filter for platform tools packages
+     * @return PackageVisitor object
+     */
     private PackageVisitor createPlatformToolsFilter() {
         return new PackageVisitor() {
             @Override
@@ -437,6 +498,35 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
          };
     }
 
+    /**
+     * Returns filter for a package specified by package path
+     * @param packagePath The package path
+     * @return PackageVisitor oibject
+     */
+    private PackageVisitor createPackageFilter(final String packagePath) {
+        return new PackageVisitor() {
+            @Override
+            public boolean accept(PkgItem pkg) {
+            	RepoPackage mainPackage = pkg.getMainPackage();
+            	if (mainPackage instanceof RemotePackage) {
+            		RemotePackage remotePackage = (RemotePackage)mainPackage;
+            		if (remotePackage.getPath().equals(packagePath))
+            			return true;
+            	} else if (pkg.hasUpdatePkg()) {
+            		RemotePackage remotePackage = pkg.getUpdatePkg().getRemote();
+            		if (remotePackage.getPath().equals(packagePath))
+            			return true;
+            	}
+                return false;
+            }
+         };
+    }
+
+    /**
+     * Returns filter for a platform of a specified API level
+     * @param apiLevel The API level or manifest constant USE_MAX_REMOTE_API_LEVEL
+     * @return PackageVisitor object
+     */
     public static PackageVisitor createPlatformFilter(final int apiLevel) {
         return new PackageVisitor() {
             int mApiLevel = apiLevel;
@@ -478,6 +568,11 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
         };
     }
 
+    /**
+     * Returns filter for a set of platforms specified by API level
+     * @param apiLevels API level set
+     * @return PackageVisitor object
+     */
     public static PackageVisitor createNewSdkFilter(final Set<Integer> apiLevels) {
         return new PackageVisitor() {
             int mMaxApiLevel;
@@ -537,6 +632,12 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
         };
     }
 
+    /**
+     * Request asynchronous package load
+     * @param progressRunner Progress runner
+     * @param onSuccess Success handler
+     * @param onError Error Handler
+     */
     private void loadPackages(ProgressRunner progressRunner, RepoLoadedCallback onSuccess, Runnable onError) {
         final PackageManager packageManager = mSdkContext.getPackageManager();
     	LoadPackagesRequest loadPackagesRequest = new LoadPackagesRequest(progressRunner);
@@ -546,13 +647,22 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
     	packageManager.requestRepositoryPackages(loadPackagesRequest);
     }
 
-    
+    /**
+     * Run a task synchronously on Display thread
+     * @param widget Widget to provide display
+     * @param runnable The task
+     */
     private void syncExec(final Widget widget, final Runnable runnable) {
         if (widget != null && !widget.isDisposed()) {
             widget.getDisplay().syncExec(runnable);
         }
     }
 
+    /**
+     * Append console line
+     * @param style Font
+     * @param text Text to display
+     */
     private void appendLine(TextStyle style, String text) {
         if (!text.endsWith("\n")) {                                 //$NON-NLS-1$
             text += '\n';
@@ -589,13 +699,19 @@ public class AdtUpdateDialog extends SwtBaseDialog implements ISdkLogWindow {
 	public void show() {
 	}
 
+	/**
+	 * Turn Stop button into Close button
+	 */
 	private void enableClose() {
+		setReturnValue(true);
 		syncExec(mCloseButton, new Runnable() {
             @Override
             public void run() {
+                mCloseButton.setToolTipText("Closes the window");
             	mCloseButton.setEnabled(true);
             	mCloseButton.setText("OK");
             }
         });
 	}
+
 }

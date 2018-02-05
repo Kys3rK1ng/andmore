@@ -16,8 +16,11 @@
 
 package com.android.sdkuilib.repository;
 
+import com.android.repository.api.RemotePackage;
 import com.android.sdkuilib.internal.repository.content.PackageType;
 import com.android.sdkuilib.internal.repository.ui.SdkUpdaterWindowImpl2;
+
+import java.util.List;
 
 import org.eclipse.andmore.sdktool.SdkCallAgent;
 
@@ -107,6 +110,10 @@ public class SdkUpdaterWindow {
     public void addPackageFilter(PackageType packageType) {
     	mWindow.addPackageFilter(packageType);
     }
+ 
+    public void setTagFilter(String tag) {
+    	mWindow.setTagFilter(tag);
+    }
     
     /**
      * Opens the window.
@@ -120,4 +127,9 @@ public class SdkUpdaterWindow {
     	}
     	
     }
+    
+    public List<RemotePackage> getPackagesInstalled() {
+    	return mWindow.getPackagesInstalled();
+    }
+    
 }

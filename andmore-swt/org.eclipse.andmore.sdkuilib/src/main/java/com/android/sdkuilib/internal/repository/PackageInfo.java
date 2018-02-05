@@ -27,91 +27,90 @@ import com.android.repository.api.RemotePackage;
  * installed. It can replace an existing local one. It can also depend on another
  * (new or local) package, which means the dependent package needs to be successfully
  * installed first. Finally this package can also be a dependency for another one.
+ * Note: Tracking the "dependency for" relationship has been discontinued.
  * <p/>
  * The accepted and rejected flags are used by {@code SdkUpdaterChooserDialog} to follow
  * user choices. The installer should never install something that is not accepted.
- * <p/>
- * <em>Note</em>: There is currently no logic to support more than one level of
- * dependency, either here or in the {@code SdkUpdaterChooserDialog}, since we currently
- * have no need for it.
  */
 public class PackageInfo implements Comparable<PackageInfo> {
 
+	/** Remote package to be installed */
     private final RemotePackage mNewPackage;
+    /** Local package being updated or null if none */
     private LocalPackage mReplaced;
+    /** License terms acceptted by user */
     private boolean mAccepted;
+    /** License terms not accepted by user */
     private boolean mRejected;
 
     /**
-     * Creates a new replacement where the {@code newPackage} will replace the
-     * currently installed {@code replaced} package.
-     * When {@code newPackage} is not intended to replace anything (e.g. because
-     * the user is installing a new package not present on her system yet), then
-     * {@code replace} shall be null.
-     *
-     * @param newPackage A "new package" to be installed. This is always an package
-     *          that comes from a remote site.
+     * Construct PackageInfo object
+     * @param newPackage The package to be installed
      */
     public PackageInfo(@NonNull RemotePackage newPackage) {
     	 this(newPackage, null);
     }
 
-    public PackageInfo(@NonNull RemotePackage newPackage, @Nullable LocalPackage replaced) {
+    /**
+     * Construct PackageInfo object where the {@code newPackage} will replace the
+     * currently installed {@code replaced} package.
+     * @param newPackage The package to be installed 
+     * @param replaced The existing local package to be updated or null if there is none
+     */
+   public PackageInfo(@NonNull RemotePackage newPackage, @Nullable LocalPackage replaced) {
     	mNewPackage = newPackage;
    	 	mReplaced = replaced;
     }
     
     /**
-     * Returns the "new archive" to be installed.
-     * This <em>may</em> be null for missing archives.
+     * Returns the package to be installed.
+     * @return RemotePackage object
      */
     public RemotePackage getNewPackage() {
         return mNewPackage;
     }
 
     /**
-     * Returns an optional local archive that the new one will replace.
-     * Can be null if this archive does not replace anything.
+     * Returns an local package to be replaced, if any.
+     * @return LocalPackage object or null
      */
     public LocalPackage getReplaced() {
         return mReplaced;
     }
 
     /**
-     * Sets whether this package was accepted (either manually by the user or
-     * automatically if it doesn't have a license) for installation.
+     * Sets flag for package is accepted  for installation.
      */
     public void setAccepted(boolean accepted) {
         mAccepted = accepted;
     }
 
     /**
-     * Returns whether this package was accepted (either manually by the user or
-     * automatically if it doesn't have a license) for installation.
+     * Returns flag for package is accepted for installation.
+     * @return boolean
      */
     public boolean isAccepted() {
         return mAccepted;
     }
 
     /**
-     * Sets whether this package was rejected manually by the user.
-     * An package can neither accepted nor rejected.
+     * Sets flag for package was rejected for installation.
      */
     public void setRejected(boolean rejected) {
         mRejected = rejected;
     }
 
     /**
-     * Returns whether this package was rejected manually by the user.
-     * An package can neither accepted nor rejected.
+     * Returns flag for package was rejected for installation
+     * @return boolean
      */
     public boolean isRejected() {
         return mRejected;
     }
 
     /**
-     * PackageInfos are compared using ther "new package" ordering.
-     *
+     * PackageInfos are compared using their "new package" ordering.
+     * #param rhs Package to compare
      * @see Package#compareTo(Package)
      */
     @Override
@@ -119,6 +118,28 @@ public class PackageInfo implements Comparable<PackageInfo> {
         if (mNewPackage != null && rhs != null) {
             return mNewPackage.compareTo(rhs.mNewPackage);
         }
-        return 0;
+        return -1;
     }
+
+    /**
+     * Returns hash code
+     */
+	@Override
+	public int hashCode() {
+		return mNewPackage != null ? mNewPackage.hashCode() : super.hashCode();
+	}
+
+	/**
+	 * Returns true if given object equals this object
+	 */
+	@Override
+	public boolean equals(Object obj) {
+		if ((obj == null) || !(obj instanceof PackageInfo))
+			return false;
+		PackageInfo other = (PackageInfo)obj;
+		if (mNewPackage != null)
+			return mNewPackage.equals(other.mNewPackage);
+		return false;
+	}
+
 }

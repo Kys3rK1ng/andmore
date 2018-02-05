@@ -24,10 +24,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
+import com.android.repository.impl.meta.TypeDetails;
 import com.android.sdklib.AndroidVersion;
+import com.android.sdklib.repository.meta.DetailsTypes.SysImgDetailsType;
 
 /**
- * Provides functions to select categories and and package items 
+ * PackageFilter provides functions to select categories and and package items 
  * based on user provided set of package types
  * @author Andrew Bowley
  *
@@ -37,6 +39,7 @@ public class PackageFilter {
 
 	public static Set<PackageType> EMPTY_PACKAGE_TYPE_SET;
 	public static final PackageType[] GENERIC_PACKAGE_TYPES; 
+	private static final String BLANK = "";
 	
 	static 
 	{
@@ -55,6 +58,9 @@ public class PackageFilter {
 	
 	/** Set of package types on which to filter. An empty set indicates no filtering */
 	private Set<PackageType> packageTypeSet;
+	/** Tag to filter on for packages like system image which have a tag */
+	private String tag;
+	// Flags to support filter logic
 	private boolean selectTools;
 	private boolean selectApi;
 	private boolean selectExtra;
@@ -80,6 +86,10 @@ public class PackageFilter {
 		}
 	}
 
+	/**
+	 * Set to filter on given package types
+	 * @param packageTypeSet Set of package types
+	 */
 	public void setPackageTypes(Set<PackageType> packageTypeSet) {
 		if (this.packageTypeSet.isEmpty())
 			this.packageTypeSet = new TreeSet<>();
@@ -88,14 +98,41 @@ public class PackageFilter {
 		initialize();
 	}
 
+	/**
+	 * Returns current filter set
+	 * @return Set of package types
+	 */
 	public Set<PackageType> getPackageTypes() {
 		return Collections.unmodifiableSet(packageTypeSet);
 	}
 
+	/**
+	 * Returns flag set true if filtering on at least one package type
+	 * @return
+	 */
 	public boolean isFilterOn() {
 		return !packageTypeSet.isEmpty();
 	}
 
+	/**
+	 * @return the tag
+	 */
+	public String getTag() {
+		return tag == null ? BLANK : tag;
+	}
+
+	/**
+	 * @param tag the tag to set
+	 */
+	public void setTag(String tag) {
+		this.tag = tag;
+	}
+
+	/**
+	 * Returns selection of categories for given list. If filtering is off, returns given list unchanged.
+	 * @param cats PkgCategory list
+	 * @return PkgCategory list
+	 */
 	public List<PkgCategory<AndroidVersion>> getFilteredApiCategories(List<PkgCategory<AndroidVersion>> cats) {
 		if (!isFilterOn())
 			return cats;
@@ -109,6 +146,7 @@ public class PackageFilter {
 					selectCategories.add(cat);
 				break;
 			case API: 
+			case EARLY_API: 
 				if (selectApi)
 					selectCategories.add(cat);
 				break;
@@ -127,28 +165,38 @@ public class PackageFilter {
 		return selectCategories;
 	}
 
-	public List<? extends INode> getFilteredItems(List<? extends INode> items)
+	/**
+	 * Returns flag set true if given node is a PkgItem object which meets filter criteria
+	 * @param node
+	 * @return
+	 */
+	public boolean selectItem(INode node)
 	{
-		if (!isFilterOn() || ((items == null) || items.isEmpty() || !(items.get(0) instanceof PkgItem)))
-			return items;
-		List<PkgItem> selectItems = new ArrayList<>();
-		for (INode node: items) {
-			PkgItem packageItem = (PkgItem)node;
-			PackageType packageType = packageItem.getMetaPackage().getPackageType();
-			if (packageTypeSet.contains(packageType))
-				selectItems.add(packageItem);
-			if (selectGeneric) {
-				for (int i = 0; i < GENERIC_PACKAGE_TYPES.length; ++i)
-					if (GENERIC_PACKAGE_TYPES[i] == packageType) {
-						selectItems.add(packageItem);
-						break;
-					}
+		if ((node == null) || !(node instanceof PkgItem))
+			return false;
+		PkgItem packageItem = (PkgItem)node;
+		PackageType packageType = packageItem.getMetaPackage().getPackageType();
+		if (packageTypeSet.contains(packageType)) {
+			if ((packageType == PackageType.system_images) && (tag != null) && !tag.isEmpty()) {
+				TypeDetails typeDetails = packageItem.getMainPackage().getTypeDetails();
+				if (typeDetails instanceof SysImgDetailsType) {
+					SysImgDetailsType sysImageType = (SysImgDetailsType)typeDetails;
+						return tag.equals(sysImageType.getTag().getId());
+				}
 			}
+			return true;
 		}
-		return selectItems;
-		
+		if (selectGeneric) {
+			for (int i = 0; i < GENERIC_PACKAGE_TYPES.length; ++i)
+				if (GENERIC_PACKAGE_TYPES[i] == packageType)
+					return true;
+		}
+		return false;
 	}
-	
+
+	/**
+	 * Initialize flags for filter logic
+	 */
 	private void initialize()
 	{
 		if (!isFilterOn())
@@ -171,5 +219,4 @@ public class PackageFilter {
 				break;
 			}
 	}
-
 }

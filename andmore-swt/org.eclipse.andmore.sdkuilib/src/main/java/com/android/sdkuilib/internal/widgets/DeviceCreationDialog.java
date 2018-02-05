@@ -81,6 +81,7 @@ public class DeviceCreationDialog extends GridDialog {
     private Device mDevice;
 
     private Text mDeviceName;
+    private Text mDeviceId;
     private Text mDiagonalLength;
     private Text mXDimension;
     private Text mYDimension;
@@ -207,6 +208,10 @@ public class DeviceCreationDialog extends GridDialog {
         String tooltip = "Name of the new device";
         generateLabel("Name:", tooltip, column1);
         mDeviceName = generateText(column1, tooltip, new CreateNameModifyListener());
+
+        tooltip = "Id of the new device";
+        generateLabel("Id:", tooltip, column1);
+        mDeviceId = generateText(column1, tooltip, new CreateNameModifyListener());
 
         tooltip = "Diagonal length of the screen in inches";
         generateLabel("Screen Size (in):", tooltip, column1);
@@ -458,9 +463,13 @@ public class DeviceCreationDialog extends GridDialog {
         @Override
         public void modifyText(ModifyEvent e) {
             String name = mDeviceName.getText();
+            String id = mDeviceId.getText();
             boolean nameCollision = false;
             for (Device d : mUserDevices) {
-                if (MANUFACTURER.equals(d.getManufacturer()) && name.equals(d.getName())) {
+                if (MANUFACTURER.equals(d.getManufacturer()) && name.equals(d.getDisplayName())) {
+                    nameCollision = true;
+                    break;
+                } else if (!id.isEmpty() && id.equals(d.getId())) {
                     nameCollision = true;
                     break;
                 }
@@ -609,7 +618,7 @@ public class DeviceCreationDialog extends GridDialog {
                 getShell().setText("Create New Device");
                 mOkButton.setText("Create Device");
             } else {
-                if (mDevice.getName().equals(name)){
+                if (mDevice.getDisplayName().equals(name)){
                     if (mUserDevices.contains(mDevice)) {
                         getShell().setText("Edit Device");
                         mOkButton.setText("Edit Device");
@@ -620,7 +629,7 @@ public class DeviceCreationDialog extends GridDialog {
                         mOkButton.setText("Clone Device");
                     }
                 } else {
-                    warning = "The device \"" + mDevice.getName() +"\" will be duplicated into\n" +
+                    warning = "The device \"" + mDevice.getDisplayName() +"\" will be duplicated into\n" +
                             "\"" + name + "\" under the \"User\" category";
                     getShell().setText("Clone Device");
                     mOkButton.setText("Clone Device");
@@ -823,7 +832,8 @@ public class DeviceCreationDialog extends GridDialog {
             return;
         }
         mHardware = device.getDefaultHardware().deepCopy();
-        mDeviceName.setText(device.getName());
+        mDeviceName.setText(device.getDisplayName());
+        mDeviceId.setText(device.getId());
         mForceCreation.setSelection(true);
         Screen s = mHardware.getScreen();
         mDiagonalLength.setText(Double.toString(s.getDiagonalLength()));
@@ -912,6 +922,11 @@ public class DeviceCreationDialog extends GridDialog {
             Device.Builder builder = new Device.Builder();
             builder.setManufacturer("User");
             builder.setName(mDeviceName.getText());
+            String id = mDeviceId.getText();
+            if (id.isEmpty())
+            	builder.setId(mDeviceName.getText());
+            else
+            	builder.setId(id);
 
             if (mDevice != null) {
                 builder.setTagId(mDevice.getTagId());

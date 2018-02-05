@@ -19,9 +19,13 @@ import org.eclipse.andmore.sdktool.SdkCallAgent;
 import org.eclipse.andmore.sdktool.SdkContext;
 import org.eclipse.andmore.sdktool.Utilities;
 import org.eclipse.andmore.sdktool.Utilities.Compatibility;
+import org.eclipse.swt.SWT;
+import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.events.SelectionListener;
+import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.TableItem;
 
 import com.android.sdklib.AndroidVersion;
@@ -31,6 +35,7 @@ import com.android.sdklib.internal.avd.AvdManager;
 import com.android.sdkuilib.internal.repository.avd.AvdAgent;
 import com.android.sdkuilib.internal.repository.avd.SdkTargets;
 import com.android.sdkuilib.internal.repository.avd.SystemImageInfo;
+import com.android.sdkuilib.internal.repository.ui.ManagerControls;
 import com.android.sdkuilib.internal.widgets.AvdSelector;
 import com.android.sdkuilib.internal.widgets.AvdSelector.IAvdFilter;
 
@@ -39,17 +44,52 @@ import com.android.sdkuilib.internal.widgets.AvdSelector.IAvdFilter;
  * @author Andrew Bowley
  *
  */
-public class AvdSelectorWindow {
+public class AvdSelectorWindow implements ManagerControls {
 
 	private final AvdSelector avdSelector;
 	private final SdkContext sdkContext;
     private final SdkTargets sdkTargets;
+    private SelectionAdapter refreshListener;
+    private SelectionAdapter closeListener;
+    private Button refreshButton;
+    private Button okButton;
 	
 	public AvdSelectorWindow(Composite parent, SdkCallAgent sdkCallAgent) {
+		this(parent, sdkCallAgent, null);
+	}
+	
+	public AvdSelectorWindow(Composite parent, SdkCallAgent sdkCallAgent, IAvdFilter filter) {
 		this.sdkContext = sdkCallAgent.getSdkContext();
     	sdkTargets = new SdkTargets(sdkContext);
-		avdSelector = new AvdSelector(parent, sdkContext, (IAvdFilter)null, AvdDisplayMode.SIMPLE_CHECK);
-	}
+        Composite composite = new Composite(parent, SWT.NONE);
+        GridLayoutBuilder.create(composite).noMargins();
+		avdSelector = new AvdSelector(composite, sdkContext, AvdDisplayMode.SIMPLE_CHECK, (ManagerControls)this);
+        Group buttonBar = new Group(composite, SWT.NONE);
+        GridDataBuilder.create(buttonBar).vCenter().fill().grab();
+        GridLayoutBuilder.create(buttonBar).columns(2);
+        refreshButton = new Button(buttonBar, SWT.PUSH | SWT.FLAT);
+        GridDataBuilder.create(refreshButton).vCenter().wHint(150).hFill().hGrab().hRight();
+        refreshButton.setText("Refresh");
+        refreshButton.setToolTipText("Reloads the list");
+        refreshButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent event) {
+                doRefresh(event);
+            }
+        });
+    	okButton = new Button(buttonBar, SWT.PUSH | SWT.FLAT);
+        GridDataBuilder.create(okButton).vCenter().wHint(150).hRight();
+    	okButton.setText("OK");
+    	okButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent event) {
+            	doClose(event);
+            	parent.getShell().close();
+             }
+        });
+    	parent.getShell().setDefaultButton(okButton);
+
+    }
 
 	/**
      * Sets the current target selection.
@@ -60,8 +100,8 @@ public class AvdSelectorWindow {
      * @param target the target to be selected. Use null to deselect everything.
      * @return true if the target could be selected, false otherwise.
      */
-	public void setSelection(AvdInfo avd) {
-		avdSelector.setSelection(avd);
+	public boolean setSelection(AvdInfo avd) {
+		return avdSelector.setSelection(avd);
 	}
 
     /**
@@ -128,6 +168,40 @@ public class AvdSelectorWindow {
     	avdSelector.setFilter(getCompatibilityFilter(target, minApiVersion));
     }
 
+	public void refresh(boolean reload) {
+		avdSelector.refresh(reload);
+	}
+	
+	@Override
+	public void enableRefresh(boolean isEnabled) {
+		refreshButton.setEnabled(isEnabled);
+	}
+
+	@Override
+	public boolean isRefreshEnabled() {
+		return refreshButton.isEnabled();
+	}
+
+	@Override
+	public void addRefreshListener(int index, SelectionAdapter refreshListener) {
+		this.refreshListener = refreshListener;
+	}
+
+	@Override
+	public void addCloseListener(int index, SelectionAdapter closeListener) {
+		this.closeListener = closeListener;
+	}
+	
+	private void doRefresh(SelectionEvent event) {
+		if (refreshListener != null)
+			refreshListener.widgetSelected(event);
+	}
+
+	private void doClose(SelectionEvent event) {
+		if (closeListener != null)
+			closeListener.widgetSelected(event);
+	}
+
     private IAvdFilter getCompatibilityFilter(IAndroidTarget target, AndroidVersion minApiVersion) {
     	return new IAvdFilter() {
  
@@ -155,4 +229,5 @@ public class AvdSelectorWindow {
         	return sdkTargets.getTargetForSysImage(systemImageInfo.getSystemImage());
         return avdSelector.getSdkTargets().getTargetForAndroidVersion(info.getAndroidVersion());
     }
+
 }

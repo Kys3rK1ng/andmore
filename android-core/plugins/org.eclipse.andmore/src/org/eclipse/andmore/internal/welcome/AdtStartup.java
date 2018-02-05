@@ -20,40 +20,30 @@
 
 package org.eclipse.andmore.internal.welcome;
 
-import com.android.SdkConstants;
-import com.android.annotations.Nullable;
-import com.android.utils.GrabProcessOutput;
-import com.android.utils.GrabProcessOutput.IProcessOutput;
-import com.android.utils.GrabProcessOutput.Wait;
-import com.android.sdkstats.DdmsPreferenceStore;
-import com.android.sdkstats.SdkStatsService;
+import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.andmore.AndmoreAndroidPlugin.CheckSdkErrorHandler;
-import org.eclipse.andmore.base.InstallDetails;
 import org.eclipse.andmore.internal.editors.layout.gle2.LayoutWindowCoordinator;
 import org.eclipse.andmore.internal.preferences.AdtPrefs;
-import org.eclipse.core.runtime.IProgressMonitor;
-import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Platform;
-import org.eclipse.core.runtime.Plugin;
-import org.eclipse.core.runtime.Status;
-import org.eclipse.core.runtime.jobs.Job;
-import org.eclipse.jface.wizard.WizardDialog;
 import org.eclipse.osgi.service.datalocation.Location;
 import org.eclipse.ui.IStartup;
 import org.eclipse.ui.IWindowListener;
 import org.eclipse.ui.IWorkbench;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
-import org.osgi.framework.Constants;
-import org.osgi.framework.Version;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import com.android.SdkConstants;
+import com.android.annotations.Nullable;
+import com.android.sdkstats.DdmsPreferenceStore;
+import com.android.utils.GrabProcessOutput;
+import com.android.utils.GrabProcessOutput.IProcessOutput;
+import com.android.utils.GrabProcessOutput.Wait;
 
 /**
  * Andmore startup tasks (other than those performed in {@link AndmoreAndroidPlugin#start(org.osgi.framework.BundleContext)}
@@ -65,6 +55,7 @@ import java.util.regex.Pattern;
  * </ul>
  */
 public class AdtStartup implements IStartup, IWindowListener {
+	private static final String SDK_LOC_SAVE_ERROR = "Error saving SDK location";
 
     private DdmsPreferenceStore mStore = new DdmsPreferenceStore();
 
@@ -74,17 +65,11 @@ public class AdtStartup implements IStartup, IWindowListener {
             File bundledSdk = getBundledSdk();
             if (bundledSdk != null) {
                 AdtPrefs.getPrefs().setSdkLocation(bundledSdk);
+            } else {
+            	isFirstTime();
             }
         }
-
-        boolean showSdkInstallationPage = !isSdkSpecified() && isFirstTime();
-
-        if (showSdkInstallationPage) {
-            showWelcomeWizard(showSdkInstallationPage);
-        }
-
         initializeWindowCoordinator();
-
         AndmoreAndroidPlugin.getDefault().workbenchStarted();
     }
 
@@ -155,8 +140,8 @@ public class AdtStartup implements IStartup, IWindowListener {
             }
         }
 
-        // Check whether we've run this wizard before.
-        return !mStore.isAdtUsed();
+        // DON'T check whether we've run this wizard before.
+        return true; //!mStore.isAdtUsed();
     }
 
     private static class SdkValidator extends AndmoreAndroidPlugin.CheckSdkErrorHandler {
@@ -243,21 +228,6 @@ public class AdtStartup implements IStartup, IWindowListener {
             public void run() {
                 for (IWorkbenchWindow window : workbench.getWorkbenchWindows()) {
                     LayoutWindowCoordinator.get(window, true /*create*/);
-                }
-            }
-        });
-    }
-
-    private void showWelcomeWizard(final boolean showSdkInstallPage) {
-        final IWorkbench workbench = PlatformUI.getWorkbench();
-        workbench.getDisplay().asyncExec(new Runnable() {
-            @Override
-            public void run() {
-                IWorkbenchWindow window = workbench.getActiveWorkbenchWindow();
-                if (window != null) {
-                    WelcomeWizard wizard = new WelcomeWizard(mStore, showSdkInstallPage);
-                    WizardDialog dialog = new WizardDialog(window.getShell(), wizard);
-                    dialog.open();
                 }
             }
         });

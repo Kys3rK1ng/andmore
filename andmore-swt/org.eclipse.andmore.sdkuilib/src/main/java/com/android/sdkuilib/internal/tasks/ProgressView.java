@@ -47,7 +47,7 @@ import com.android.sdkuilib.ui.GridDialog;
  * Implements a "view" that uses an existing progress bar, status button and
  * status text to display a {@link ITaskMonitor}.
  */
-public final class ProgressView implements IProgressUiProvider {
+public final class ProgressView implements IProgressUiProvider, ITaskMonitor {
 
     private static enum State {
         /** View created but there's no task running. Next state can only be ACTIVE. */
@@ -70,6 +70,8 @@ public final class ProgressView implements IProgressUiProvider {
 
     /** Logger object. Cannot not be null. */
     private final ILogUiProvider mLog;
+    private volatile ITaskMonitor taskMonitor;
+    private volatile boolean isCanceled;
 
     /**
      * Creates a new {@link ProgressView} object, a simple "holder" for the various
@@ -99,6 +101,7 @@ public final class ProgressView implements IProgressUiProvider {
                 @Override
                 public void handleEvent(Event event) {
                     if (mState == State.ACTIVE) {
+                    	isCanceled = true;
                         changeState(State.STOP_PENDING);
                     }
                 }
@@ -132,7 +135,8 @@ public final class ProgressView implements IProgressUiProvider {
                     protected IStatus run(IProgressMonitor m) {
                     	IStatus status = Status.CANCEL_STATUS;
                     	try {
-                            task.run(new TaskMonitorImpl(ProgressView.this));
+                    		taskMonitor = new TaskMonitorImpl(ProgressView.this); 
+                            task.run(taskMonitor);
                             status = Status.OK_STATUS;
                     	} catch (Exception e) {
                     		StringWriter builder = new StringWriter();
@@ -141,6 +145,7 @@ public final class ProgressView implements IProgressUiProvider {
                             e.printStackTrace(writer);
                             mLog.logError(builder.toString());
                     	} finally {
+                    		taskMonitor = null;
                             endTask();
                     	}
                         return status;
@@ -246,10 +251,9 @@ public final class ProgressView implements IProgressUiProvider {
 
     @Override
     public boolean isCancelRequested() {
-    	boolean cancelStatus = mState != State.ACTIVE;
-    	if (cancelStatus)
+    	if (isCanceled)
     		log("Stop button pressed");
-        return cancelStatus;
+        return isCanceled;
     }
 
     /**
@@ -420,5 +424,111 @@ public final class ProgressView implements IProgressUiProvider {
 
         return result.get();
     }
+
+	@Override
+	public void error(Throwable t, String msgFormat, Object... args) {
+		if (taskMonitor != null)
+			taskMonitor.error(t, msgFormat, args);
+	}
+
+	@Override
+	public void warning(String msgFormat, Object... args) {
+		if (taskMonitor != null)
+			taskMonitor.warning(msgFormat, args);
+	}
+
+	@Override
+	public void info(String msgFormat, Object... args) {
+		if (taskMonitor != null)
+			taskMonitor.info(msgFormat, args);
+	}
+
+	@Override
+	public void verbose(String msgFormat, Object... args) {
+		if (taskMonitor != null)
+			taskMonitor.verbose(msgFormat, args);
+	}
+
+	@Override
+	public void setDescription(String format, Object... args) {
+		if (taskMonitor != null)
+			taskMonitor.setDescription(format, args);
+	}
+
+	@Override
+	public void log(String format, Object... args) {
+		if (taskMonitor != null)
+			taskMonitor.log(format, args);
+	}
+
+	@Override
+	public void logError(String format, Object... args) {
+		if (taskMonitor != null)
+			taskMonitor.logError(format, args);
+	}
+
+	@Override
+	public void logVerbose(String format, Object... args) {
+		if (taskMonitor != null)
+			taskMonitor.logVerbose(format, args);
+	}
+
+	@Override
+	public int getProgressMax() {
+		if (taskMonitor != null)
+			taskMonitor.getProgressMax();
+		return 0;
+	}
+
+	@Override
+	public void incProgress(int delta) {
+		if (taskMonitor != null)
+			taskMonitor.incProgress(delta);
+	}
+
+	@Override
+	public ITaskMonitor createSubMonitor(int tickCount) {
+		throw new java.lang.UnsupportedOperationException();
+	}
+
+	@Override
+	public void cancel() {
+		if (taskMonitor != null) {
+			isCanceled = true;
+			taskMonitor.cancel();
+		}
+	}
+
+	@Override
+	public void setCancellable(boolean cancellable) {
+		if (taskMonitor != null)
+			taskMonitor.setCancellable(cancellable);
+	}
+
+	@Override
+	public boolean isCancellable() {
+		if (taskMonitor != null)
+			return taskMonitor.isCancellable();	
+		return false;
+	}
+
+	@Override
+	public void setIndeterminate(boolean indeterminate) {
+		if (taskMonitor != null)
+			taskMonitor.setIndeterminate(indeterminate);		
+	}
+
+	@Override
+	public boolean isIndeterminate() {
+		if (taskMonitor != null)
+			return taskMonitor.isIndeterminate();
+		return false;
+	}
+
+	@Override
+	public void setFraction(double fraction) {
+		if (taskMonitor != null)
+			taskMonitor.setFraction(fraction);		
+	}
 }
 

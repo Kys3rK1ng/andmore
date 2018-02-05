@@ -20,10 +20,12 @@ import java.util.List;
 
 /**
  * Tree node which provides the text, font and image for the label of a given tree element
+ * and supports navigation of the view tree. All methods are implemented to provide defaults,
+ * so sub classes need only override when the default is not correct.
  * @author Andrew Bowley
  *
  */
-public class INode {
+public abstract class INode {
     /** Font can be normal or italic */
 	static enum LabelFont { normal, italic }
 	
@@ -37,6 +39,30 @@ public class INode {
  
 	/** Flag to mirror node checkbox state */
 	protected boolean isChecked;
+	/** Parent node. This will be null for the root node. */
+	protected INode parentNode;
+
+	/**
+	 * Default constructor for first-level node without parent
+	 */
+	public INode() {
+	}
+
+	/**
+	 * Construct INode object to sit below root node
+	 * @param parentNode
+	 */
+	public INode(INode parentNode) {
+		this.parentNode = parentNode;
+	}
+	
+	/** 
+	 * Returns parent of this node
+	 * @return INode object or null
+	 */
+	public INode getParent() {
+		return parentNode;
+	}
 	
 	/**
 	 * Returns the image resource value for the label of the given element.  
@@ -94,6 +120,14 @@ public class INode {
 	}
 
 	/**
+	 * Returns flag set true if this node has children
+	 * @return
+	 */
+	public boolean hasChildren() {
+		return false;
+	}
+	
+	/**
 	 * Sets checkbox state
 	 * @param isChecked Value to set checkbox on next refresh
 	 */
@@ -105,11 +139,13 @@ public class INode {
      * Mark item as checked according to given criteria. Force uncheck if no criteria specified.
      * @param selectUpdates If true, select all update packages
      * @param topApiLevel If greater than 0, select platform packages of this api level
+     * @return flag set true if item is checked
       */
-	public void checkSelections(
+	public boolean checkSelections(
             boolean selectUpdates,
             int topApiLevel)
 	{
+		return false;
 	}
 
 	/**
@@ -127,5 +163,4 @@ public class INode {
 	{
 		return false; 
 	}
-
 }

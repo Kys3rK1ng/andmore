@@ -16,11 +16,17 @@
 
 package com.android.sdkuilib.internal.widgets;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Map.Entry;
 
+import org.eclipse.andmore.base.resources.ImageFactory;
 import org.eclipse.swt.SWT;
-import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
@@ -28,6 +34,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 
 import com.android.sdklib.internal.avd.AvdInfo.AvdStatus;
+import com.android.SdkConstants;
 import com.android.sdklib.internal.avd.AvdManager;
 import com.android.sdkuilib.internal.repository.avd.AvdAgent;
 import com.android.sdkuilib.ui.GridDataBuilder;
@@ -39,12 +46,16 @@ import com.android.sdkuilib.ui.SwtBaseDialog;
  */
 final class AvdDetailsDialog extends SwtBaseDialog {
 
-    private final AvdAgent mAvdAgent;
+    private static final String REQUIRES_PACKAGES = "Requires packages to be installed";
+    
+	private final AvdAgent avdAgent;
+    private final ImageFactory imageFactory;
     private volatile int row = 0;
 
-    public AvdDetailsDialog(Shell shell, AvdAgent avdAgent) {
+    public AvdDetailsDialog(Shell shell, ImageFactory imageFactory, AvdAgent avdAgent) {
         super(shell, SWT.APPLICATION_MODAL, "AVD details");
-        mAvdAgent = avdAgent;
+        this.avdAgent = avdAgent;
+        this.imageFactory = imageFactory;
     }
 
     /**
@@ -55,39 +66,30 @@ final class AvdDetailsDialog extends SwtBaseDialog {
         Shell shell = getShell();
         GridLayoutBuilder.create(shell).columns(2);
         GridDataBuilder.create(shell).fill();
-
-        GridLayout gl;
-
-        Composite c = new Composite(shell, SWT.NONE);
-        c.setLayout(gl = new GridLayout(2, false));
-        gl.marginHeight = gl.marginWidth = 0;
-        GridData gridData = new GridData();
-        gridData.horizontalAlignment = GridData.FILL;
-        gridData.grabExcessHorizontalSpace = true;
-        c.setLayoutData(gridData);
-        //Display display = c.getDisplay();
-        //c.setBackground(display.getSystemColor(SWT.COLOR_INFO_BACKGROUND));
-        //c.setForeground(display.getSystemColor(SWT.COLOR_INFO_FOREGROUND));
-
-        if (mAvdAgent != null) {
-            displayValue(c, "Name:", mAvdAgent.getAvd().getName());
-            displayValue(c, "CPU/ABI:", mAvdAgent.getPrettyAbiType());
-            displayValue(c, "Path:", mAvdAgent.getPath());
-            if (mAvdAgent.getAvd().getStatus() != AvdStatus.OK) {
-                displayValue(c, "Error:", mAvdAgent.getAvd().getErrorMessage());
+        Composite group = new Composite(shell, SWT.NONE);
+        GridLayoutBuilder.create(group).columns(2).noMargins();
+        GridDataBuilder.create(group).hFill().hGrab();
+        if (avdAgent != null) {
+            displayValue(group, "Name:", avdAgent.getAvd().getName(), false);
+            displayValue(group, "CPU/ABI:", avdAgent.getPrettyAbiType(), false);
+            displayValue(group, "Path:", avdAgent.getPath(), false);
+            if (avdAgent.getAvd().getStatus() != AvdStatus.OK) {
+                displayValue(group, "Error:", avdAgent.getAvd().getErrorMessage(), false);
+            } else if (avdAgent.getTarget() == null) {
+                displayValue(group, "Error:", REQUIRES_PACKAGES , false);
             } else {
-                displayValue(c, "Target:", mAvdAgent.getTargetDisplayName());
-                displayValue(c, "Skin:", mAvdAgent.getSkin());
-                String sdcard = mAvdAgent.getSdcard();
+                displayValue(group, "Target:", avdAgent.getTargetDisplayName(), false);
+                displayValue(group, "Skin:", avdAgent.getSkin(), false);
+                String sdcard = avdAgent.getSdcard();
                 if (!sdcard.isEmpty()) {
-                    displayValue(c, "SD Card:", sdcard);
+                    displayValue(group, "SD Card:", sdcard, false);
                 }
-                String snapshot = mAvdAgent.getSnapshot();
+                String snapshot = avdAgent.getSnapshot();
                 if (!snapshot.isEmpty()) {
-                    displayValue(c, "Snapshot:", snapshot);
+                    displayValue(group, "Snapshot:", snapshot, false);
                 }
                 // display other hardware
-                HashMap<String, String> copy = new HashMap<String, String>(mAvdAgent.getAvd().getProperties());
+                Map<String, String> copy = new HashMap<String, String>(avdAgent.getAvd().getProperties());
                 // remove stuff we already displayed (or that we don't want to display)
                 copy.remove(AvdManager.AVD_INI_ABI_TYPE);
                 copy.remove(AvdManager.AVD_INI_CPU_ARCH);
@@ -99,25 +101,27 @@ final class AvdDetailsDialog extends SwtBaseDialog {
                 copy.remove(AvdManager.AVD_INI_IMAGES_2);
 
                 if (copy.size() > 0) {
-                    Label l = new Label(shell, SWT.SEPARATOR | SWT.HORIZONTAL);
-                    l.setLayoutData(new GridData(
-                            GridData.FILL, GridData.HORIZONTAL_ALIGN_BEGINNING, false, false, 2, 1));
-                    //display = l.getDisplay();
-                    //l.setBackground(display.getSystemColor(SWT.COLOR_INFO_BACKGROUND));
-                    c = new Composite(shell, SWT.NONE);
-                    c.setLayout(gl = new GridLayout(2, false));
-                    //display = c.getDisplay();
-                    gl.marginHeight = gl.marginWidth = 0;
-                    //c.setBackground(display.getSystemColor(SWT.COLOR_INFO_BACKGROUND));
-                    c.setLayoutData(new GridData(GridData.FILL_BOTH));
-                    //c.setBackground(display.getSystemColor(SWT.COLOR_INFO_BACKGROUND));
-                    //c.setForeground(display.getSystemColor(SWT.COLOR_INFO_FOREGROUND));
-                    for (Map.Entry<String, String> entry : copy.entrySet()) {
-                        displayValue(c, entry.getKey() + ":", entry.getValue());
+                	List<Map.Entry<String, String>> propertiesList = new ArrayList<>(copy.size());
+                	propertiesList.addAll(copy.entrySet());
+                    Label label = new Label(shell, SWT.SEPARATOR | SWT.HORIZONTAL);
+                    GridDataBuilder.create(label).fill().hGrab().hSpan(2);
+                    Composite group2 = new Composite(shell, SWT.NONE);
+                    GridLayoutBuilder.create(group2).columns(2).noMargins().spacing(0);
+                    GridDataBuilder.create(group2).fill();
+					Comparator<Map.Entry<String, String>> propertiesCompare = new Comparator<Map.Entry<String, String>>(){
+
+						@Override
+						public int compare(Entry<String, String> prop1, Entry<String, String> prop2) {
+							return prop1.getKey().toLowerCase(Locale.US).compareTo(prop2.getKey().toLowerCase(Locale.US));
+						}};
+					Collections.sort(propertiesList, propertiesCompare );
+                    for (Map.Entry<String, String> entry : propertiesList) {
+                        displayValue(group2, entry.getKey() + ": ", entry.getValue(), true);
                     }
                 }
             }
         }
+        setWindowImage(shell);
     }
 
     // -- Start of internal part ----------
@@ -137,26 +141,46 @@ final class AvdDetailsDialog extends SwtBaseDialog {
      * {@link GridLayout} with 2 columns.
      * @param label the label of the value to display.
      * @param value the string value to display.
+     * @param shade flag set true if shading required
      */
-    private void displayValue(Composite parent, String key, String value) {
+    private void displayValue(Composite parent, String key, String value, boolean shade) {
         Label label = new Label(parent, SWT.LEFT);
-        label.setLayoutData(new GridData(GridData.FILL, GridData.VERTICAL_ALIGN_CENTER, false, false));
+        GridDataBuilder.create(label).fill().vCenter();
         Display display = label.getDisplay();
-        if ((row & 1) == 0) {
+        if (shade && ((row & 1) == 0)) {
 	        label.setBackground(display.getSystemColor(SWT.COLOR_INFO_BACKGROUND));
 	        label.setForeground(display.getSystemColor(SWT.COLOR_INFO_FOREGROUND));
         }
         label.setText(key);
 
         label = new Label(parent, SWT.LEFT);
-        label.setLayoutData(new GridData(GridData.FILL, GridData.VERTICAL_ALIGN_CENTER, true, false));
+        GridDataBuilder.create(label).fill().vCenter().hGrab();
         display = label.getDisplay();
-        if ((row & 1) == 0) {
+        if (shade && ((row & 1) == 0)) {
 	        label.setBackground(display.getSystemColor(SWT.COLOR_INFO_BACKGROUND));
 	        label.setForeground(display.getSystemColor(SWT.COLOR_INFO_FOREGROUND));
         }
+        if (value == null)
+        	value = "";
         label.setText(value);
-        ++row;
+        if (shade)
+        	++row;
+    }
+
+    /**
+     * Creates the icon of the window shell.
+     *
+     * @param shell The shell on which to put the icon
+     */
+    private void setWindowImage(Shell shell) {
+        String imageName = "android_icon_16.png"; //$NON-NLS-1$
+        if (SdkConstants.currentPlatform() == SdkConstants.PLATFORM_DARWIN) {
+            imageName = "android_icon_128.png";
+        }
+
+        if (imageFactory != null) {
+            shell.setImage(imageFactory.getImageByName(imageName));
+        }
     }
 
     // End of hiding from SWT Designer

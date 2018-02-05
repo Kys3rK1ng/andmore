@@ -22,10 +22,6 @@ import com.android.utils.ILogger;
 /**
  * A monitor interface for a {@link ITask}.
  * <p/>
- * Depending on the task factory that created the task, there might not be any UI
- * or it might not implement all the methods, in which case calling them would be
- * a no-op but is guaranteed not to crash.
- * <p/>
  * If the task runs in a non-UI worker thread, the task factory implementation
  * will take care of the update the UI in the correct thread. The task itself
  * must not have to deal with it.
@@ -155,4 +151,21 @@ public interface ITaskMonitor extends ILogger {
                If operation is <b>canceled</b> by user the return value must be <b>null</b>.
      */
     UserCredentials displayLoginCredentialsPrompt(String title, String message);
+    
+    //////////////////////////////////////////
+    // Android ProgressIndicator compatibility
+    //////////////////////////////////////////
+    void cancel();
+
+    void setCancellable(boolean cancellable);
+
+    boolean isCancellable();
+
+    public void setIndeterminate(boolean indeterminate);
+
+    public boolean isIndeterminate();
+
+    public void setFraction(double fraction);
+
+
 }

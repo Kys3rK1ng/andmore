@@ -29,15 +29,20 @@ import com.android.sdklib.devices.Storage.Unit;
 import com.android.sdklib.internal.avd.AvdInfo;
 import com.android.sdklib.repository.targets.SystemImage;
 import com.android.sdkuilib.internal.repository.avd.SdkTargets;
+import com.android.sdkuilib.internal.repository.content.PackageType;
+
 import org.eclipse.andmore.base.resources.ImageFactory;
 import org.eclipse.andmore.base.resources.ImageFactory.ImageEditor;
 import com.android.sdkuilib.internal.widgets.AvdCreationDialog;
 import com.android.sdkuilib.internal.widgets.AvdSelector;
 import com.android.sdkuilib.internal.widgets.DeviceCreationDialog;
 import com.android.sdkuilib.repository.ISdkChangeListener;
+import com.android.sdkuilib.repository.SdkUpdaterWindow;
+import com.android.sdkuilib.repository.SdkUpdaterWindow.SdkInvocationContext;
 import com.android.sdkuilib.ui.GridDataBuilder;
 import com.android.sdkuilib.ui.GridLayoutBuilder;
 
+import org.eclipse.andmore.sdktool.SdkCallAgent;
 import org.eclipse.andmore.sdktool.SdkContext;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.window.Window;
@@ -102,20 +107,25 @@ public class DeviceManagerPage extends Composite
     public interface IAvdCreatedListener {
         public void onAvdCreated(AvdInfo createdAvdInfo);
     }
+    private static final String DEFAULT_TAG_ID = SystemImage.DEFAULT_TAG.getId();
+
+	private static final String TABLE_TITLE = "Android Virtual Device templates. \"Create AVD..\" configures a new AVD to run on an emulator";
 
     private final SdkContext mSdkContext;
     private final SdkTargets mSdkTargets;
     private final DeviceManager mDeviceManager;
+    /** Binds to manager refresh and close buttons */
+    private final ManagerControls managerControls;
+    private Shell mShell;
     private Table mTable;
     private Button mNewButton;
     private Button mEditButton;
     private Button mDeleteButton;
     private Button mNewAvdButton;
-    private Button mRefreshButton;
+    private Button mInstallButton;
     private ImageFactory mImageFactory;
     private Image mUserImage;
     private Image mDeviceImage;
-    private int mImageWidth;
     private boolean mDisableRefresh;
     private IAvdCreatedListener mAvdCreatedListener;
     private final ImageEditor mUserColorFilter = new ImageEditor() {
@@ -140,46 +150,56 @@ public class DeviceManagerPage extends Composite
     /**
      * Create the composite.
      * @param parent The parent of the composite.
-     * @param SdkContext An instance of {@link SdkContext}.
+     * @param swtStyle Style flags
+     * @param sdkContext SDK context
+     * @param sdkTargets SDK targets and system images
+     * @param managerControls Binds to manager refresh and close buttons
      */
     public DeviceManagerPage(Composite parent,
             int swtStyle,
             SdkContext sdkContext,
-            SdkTargets sdkTargets) {
+            SdkTargets sdkTargets,
+            ManagerControls managerControls) {
         super(parent, swtStyle);
 
         mSdkContext = sdkContext;
         mSdkTargets = sdkTargets;
+        this.managerControls = managerControls;
         mSdkContext.getSdkHelper().addListeners(this);
 
         mDeviceManager = mSdkContext.getDeviceManager();
         mDeviceManager.registerListener(this);
-
+        mShell = parent.getShell();
+        managerControls.addRefreshListener(1, new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent event) {
+                onRefresh();
+            }
+        });
         createContents(this);
         postCreate();  //$hide$
     }
 
+    public boolean isDisposed() {
+    	return mShell.isDisposed();
+    }
+    
     public void setAvdCreatedListener(IAvdCreatedListener avdCreatedListener) {
         mAvdCreatedListener = avdCreatedListener;
     }
 
     private void createContents(Composite parent) {
-
-        // get some bitmaps.
+         // get some bitmaps.
         mImageFactory = mSdkContext.getSdkHelper().getImageFactory();
         mUserImage = getTagImage(null /*tag*/, true /*isUser*/);
         mDeviceImage = getTagImage(null /*tag*/, false /*isUser*/);
-        mImageWidth = Math.max(mDeviceImage.getImageData().width,
-                        Math.max(mUserImage.getImageData().width,
-                                mDeviceImage.getImageData().width));
-
         // Layout has 2 columns
         GridLayoutBuilder.create(parent).columns(2);
 
         // Insert a top label explanation. This matches the design in AvdManagerPage so
         // that the table starts at the same height on both tabs.
         Label label = new Label(parent, SWT.NONE);
-        label.setText("List of known device definitions. This can later be used to create Android Virtual Devices.");
+        label.setText(TABLE_TITLE);
         GridDataBuilder.create(label).hSpan(2);
 
         // Device table.
@@ -234,7 +254,7 @@ public class DeviceManagerPage extends Composite
         mDeleteButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
         mDeleteButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
         mDeleteButton.setText("Delete...");
-        mDeleteButton.setToolTipText("Deletes the selected AVD.");
+        mDeleteButton.setToolTipText("Deletes the selected user device.");
         mDeleteButton.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent arg0) {
@@ -242,19 +262,19 @@ public class DeviceManagerPage extends Composite
             }
         });
 
-        Composite padding = new Composite(buttons, SWT.NONE);
-        padding.setLayoutData(new GridData(GridData.FILL_VERTICAL));
-
-        mRefreshButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-        mRefreshButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-        mRefreshButton.setText("Refresh");
-        mRefreshButton.setToolTipText("Reloads the list of devices.");
-        mRefreshButton.addSelectionListener(new SelectionAdapter() {
+        mInstallButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
+        mInstallButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+        mInstallButton.setText("Install...");
+        mInstallButton.setToolTipText("Launches SDK Manager which selects system image packages with matching tag");
+        mInstallButton.addSelectionListener(new SelectionAdapter() {
             @Override
             public void widgetSelected(SelectionEvent arg0) {
-                onRefresh();
+                onInstallPackage();
             }
         });
+
+        Composite padding = new Composite(buttons, SWT.NONE);
+        padding.setLayoutData(new GridData(GridData.FILL_VERTICAL));
 
         // Legend at the bottom.
         // This matches the one on AvdSelector so that the table height in the tab be similar.
@@ -270,29 +290,26 @@ public class DeviceManagerPage extends Composite
 
         // create the table columns
         final TableColumn column0 = new TableColumn(mTable, SWT.NONE);
-        column0.setText("Device");
+        column0.setText("Tag");
+        final TableColumn column1 = new TableColumn(mTable, SWT.NONE);
+        column1.setText("Device");
 
-        adjustColumnsWidth(mTable, column0);
-        setupSelectionListener(mTable);
+        adjustColumnsWidth(mTable, column0, column1);
         fillTable(mTable);
         updateButtonStates();
         setEnabled(true);
     }
 
-    private void adjustColumnsWidth(final Table table, final TableColumn column0) {
+    private void adjustColumnsWidth(final Table table, final TableColumn column0, final TableColumn column1) {
         // Add a listener to resize the column to the full width of the table
         table.addControlListener(new ControlAdapter() {
             @Override
             public void controlResized(ControlEvent e) {
                 Rectangle r = table.getClientArea();
-                column0.setWidth(r.width * 100 / 100 - 1); // 100%
+                column0.setWidth(r.width * 30 / 100); // 30%
+                column1.setWidth(r.width * 70 / 100); // 70%
             }
         });
-    }
-
-    private void setupSelectionListener(Table table) {
-        // TODO Auto-generated method stub
-
     }
 
     /**
@@ -344,16 +361,20 @@ public class DeviceManagerPage extends Composite
     // -------
 
     private static class CellInfo {
-        final boolean mIsUser;
+		final boolean mIsUser;
         final Device  mDevice;
-        final TextLayout mWidget;
+        TextLayout mWidget;
+        String deviceTagId;
         Rectangle mBounds;
 
-        CellInfo(boolean isUser, Device device, TextLayout widget) {
+        CellInfo(boolean isUser, Device device, String defaultTagId) {
             mIsUser = isUser;
             mDevice = device;
-            mWidget = widget;
-        }
+            deviceTagId = device.getTagId();
+            if (deviceTagId == null || deviceTagId.isEmpty()) {
+                deviceTagId = defaultTagId;
+            }
+       }
     }
 
     private void fillTable(final Table table) {
@@ -390,9 +411,11 @@ public class DeviceManagerPage extends Composite
                 public void handleEvent(Event event) {
                     if (event.item != null) {
                         Object info = event.item.getData();
-                        if (info instanceof CellInfo) {
+                        if ((event.index == 1) && (info instanceof CellInfo)) {
                             ((CellInfo) info).mWidget.draw(event.gc, event.x, event.y + 1);
                         }
+                        else
+                        	event.doit = false;
                     }
                 }
             });
@@ -508,12 +531,16 @@ public class DeviceManagerPage extends Composite
         final String prefix = "\n    ";
 
         for (Device device : devices) {
+            CellInfo ci = new CellInfo(isUser, device, DEFAULT_TAG_ID);
             TableItem item = new TableItem(table, SWT.NONE);
-            TextLayout widget = new TextLayout(display);
-            CellInfo ci = new CellInfo(isUser, device, widget);
             item.setData(ci);
+            Image img = getTagImage(device.getTagId(), isUser);
+            item.setImage(0, img != null ? img : mDeviceImage);
+			item.setText(0, ci.deviceTagId);
+            TextLayout widget = new TextLayout(display);
+            ci.mWidget = widget;
 
-            widget.setIndent(mImageWidth * 2);
+            //widget.setIndent(mImageWidth * 2);
             widget.setFont(table.getFont());
 
             StringBuilder sb = new StringBuilder();
@@ -525,9 +552,6 @@ public class DeviceManagerPage extends Composite
             if (!manufacturer.contains(NEXUS)) {
                 sb.append("  by ").append(manufacturer);
             }
-
-            Image img = getTagImage(device.getTagId(), isUser);
-            item.setImage(img != null ? img : mDeviceImage);
 
             Hardware hw = device.getDefaultHardware();
             Screen screen = hw.getScreen();
@@ -650,7 +674,8 @@ public class DeviceManagerPage extends Composite
         mEditButton.setText((ci != null && !ci.mIsUser) ? "Clone..." : "Edit...");
         mDeleteButton.setEnabled(ci != null && ci.mIsUser);
         mNewAvdButton.setEnabled(ci != null);
-        mRefreshButton.setEnabled(true);
+        mInstallButton.setEnabled(ci != null && !ci.deviceTagId.equals(DEFAULT_TAG_ID));
+        managerControls.enableRefresh(true);
     }
 
     private void onNewDevice() {
@@ -716,6 +741,25 @@ public class DeviceManagerPage extends Composite
         }
     }
 
+    private void onInstallPackage() {
+        CellInfo ci = getTableSelection();
+		// Create call agent to set up an SDK context and launch SDK manager
+        SdkCallAgent sdkCallAgent = 
+        	new SdkCallAgent(
+        		mSdkContext.getHandler(),
+        		mSdkContext.getSdkLog());
+        SdkUpdaterWindow window = new SdkUpdaterWindow(
+                mShell,
+                sdkCallAgent,
+                SdkInvocationContext.IDE);
+        window.addPackageFilter(PackageType.platforms);
+        window.addPackageFilter(PackageType.system_images);
+        if ((ci != null) && !ci.deviceTagId.equals(DEFAULT_TAG_ID)) 
+			window.setTagFilter(ci.deviceTagId);
+        window.open();
+        //List<RemotePackage> packagesInstalled = window.getPackagesInstalled();
+    }
+    
     private void onCreateAvd() {
         CellInfo ci = getTableSelection();
         if (ci == null || ci.mDevice == null) {
@@ -804,7 +848,14 @@ public class DeviceManagerPage extends Composite
 
     @Override
     public void onSdkReload() {
-        onRefresh();
+    	Display.getDefault().syncExec(new Runnable(){
+
+			@Override
+			public void run() {
+				if (!isDisposed())
+			        onRefresh();
+			}
+    	});
     }
 
     @Override

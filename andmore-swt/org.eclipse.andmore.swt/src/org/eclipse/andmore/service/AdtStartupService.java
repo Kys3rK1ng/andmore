@@ -37,12 +37,12 @@ public class AdtStartupService implements StartupService {
     // ---- Implements StartupService ----
 
 	@Override
-	public void put(Job job) throws InterruptedException {
+	public synchronized void put(Job job) throws InterruptedException {
         jobQueue.put(job);
 	}
 
 	@Override
-	public void start(int jobCount) {
+	public synchronized void start(int jobCount) {
 		if ((consumeThread != null) && consumeThread.isAlive())
 			return;
         Runnable comsumeTask = new Runnable()
@@ -68,12 +68,20 @@ public class AdtStartupService implements StartupService {
         };
         consumeThread = new Thread(comsumeTask, "Startup Service");
         consumeThread.start();
+        consumeThread = null;
 	}
 
 	@Override
-	public void stop() {
+	public synchronized void stop() {
 		if (consumeThread != null)
+		{
+			while (!jobQueue.isEmpty()) {
+				Job job = jobQueue.remove();
+				job.cancel();
+				
+			}
 			consumeThread.interrupt();
+		}
 	}
 	
 	public static AdtStartupService instance() {

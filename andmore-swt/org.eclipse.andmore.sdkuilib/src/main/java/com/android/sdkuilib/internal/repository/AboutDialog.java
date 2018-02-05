@@ -38,6 +38,9 @@ import com.android.sdklib.repository.PkgProps;
 import com.android.sdkuilib.ui.GridDataBuilder;
 import com.android.sdkuilib.ui.GridLayoutBuilder;
 
+/**
+ * About Dialog. "Android SDK Manager" + verions + copyright 
+ */
 public class AboutDialog extends UpdaterBaseDialog {
 
     private static final String COPYRIGHT = "Copyright (C) 2009-2017";
@@ -90,13 +93,21 @@ public class AboutDialog extends UpdaterBaseDialog {
     // End of hiding from SWT Designer
     //$hide<<$
 
+    /** 
+     * Show current "tools" version
+     * @return String
+     */
     private String getVersion() {
     	LocalPackage platformPackage = mSdkContext.getHandler().getLatestLocalPackageForPrefix(SdkConstants.FD_TOOLS, false, mSdkContext.getProgressIndicator());
     	if (platformPackage != null)
     		return platformPackage.getVersion().toShortString();
     	return getToolsVersion();
     }
-    
+  
+    /**
+     * Get tools version from source properties file
+     * @return
+     */
     private String getToolsVersion() {
         Properties p = new Properties();
         File suffix = new File(SdkConstants.FD_TOOLS, SdkConstants.FN_SOURCE_PROP);

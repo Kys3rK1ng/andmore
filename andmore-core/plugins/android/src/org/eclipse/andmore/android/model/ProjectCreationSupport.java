@@ -40,6 +40,7 @@ import org.eclipse.andmore.android.common.utilities.FileUtil;
 import org.eclipse.andmore.android.i18n.AndroidNLS;
 import org.eclipse.andmore.android.model.AndroidProject.SourceTypes;
 import org.eclipse.andmore.android.utilities.DictionaryUtils;
+import org.eclipse.andmore.android.wizards.project.NewAndroidProjectWizard;
 import org.eclipse.core.resources.IContainer;
 import org.eclipse.core.resources.IFile;
 import org.eclipse.core.resources.IFolder;
@@ -181,7 +182,8 @@ public class ProjectCreationSupport {
 
 		if (!canCreateProject(workspace.getRoot(), androidProject.getName())) {
 			throw new AndroidException(AndroidNLS.EXC_ProjectCreationSupport_CannotCreateProjectReadOnlyWorkspace);
-		} else {
+		} else 
+		    try {
 
 			final IProjectDescription description = workspace.newProjectDescription(project.getName());
 
@@ -239,8 +241,12 @@ public class ProjectCreationSupport {
 			WorkspaceModifyOperation op = new WorkspaceModifyOperation() {
 				@Override
 				protected void execute(IProgressMonitor monitor) throws InvocationTargetException {
-
-					createProjectAsync(project, androidProject, description, monitor, parameters, stringDictionary);
+                    try {
+                    	createProjectAsync(project, androidProject, description, monitor, parameters, stringDictionary);
+                    } catch (Exception e) {
+        				AndmoreLogger.error(ProjectCreationSupport.class,
+        						"Unexpected error while creating project: " + e.getMessage(), e); //$NON-NLS-1$
+                    }
 				}
 			};
 
@@ -248,6 +254,8 @@ public class ProjectCreationSupport {
 			 * Run the operation in a different thread
 			 */
 			created = runAsyncOperation(op, container);
+		} catch (Exception e) {
+			throw new AndroidException("Unexpected error while creating project", e);
 		}
 
 		return created;

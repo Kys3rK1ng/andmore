@@ -22,83 +22,18 @@ import com.android.sdklib.SdkVersionInfo;
 
 public class PkgCategoryApi extends PkgCategory<AndroidVersion> {
 
-    /** Platform name, in the form "Android 1.2". Can be null if we don't have the name. */
-    private String mPlatformName;
-
-    // When sorting by Source, key is the hash of the source's name.
-    // When storing by API, key is the AndroidVersion (API level >=1 + optional codename).
-    // We always want categories in order tools..platforms..extras; to achieve that tools
-    // and extras have the special values so they get "naturally" sorted the way we want
-    // them.
-
     public PkgCategoryApi(CategoryKeyType keyType, AndroidVersion version, String iconRef) {
-        super(keyType, version, null /*label*/, iconRef);
-        if (version != null)
-        	setPlatformName(SdkVersionInfo.getVersionWithCodename(version));
-    }
-
-    public String getPlatformName() {
-        return mPlatformName;
-    }
-
-    public void setPlatformName(String platformName) {
-        if (platformName != null) {
-            // Normal case for actual platform categories
-            mPlatformName = String.format("Android %1$s", platformName);
-            super.setLabel(null);
+        super(keyType, version, iconRef);
+        if (version != null) {
+        	// Set platform name and API to version-specific values
+            label = String.format("%1$s (%2$s)", SdkVersionInfo.getVersionWithCodename(version), version.getApiString());
         }
-    }
-
-    public String getApiLabel() {
-        if (getKeyType() == CategoryKeyType.TOOLS) {
-            return "TOOLS";             //$NON-NLS-1$ 
-        } else if  (getKeyType() == CategoryKeyType.TOOLS_PREVIEW){
-            return "TOOLS-PREVIEW"; //$NON-NLS-1$
-        } else if (getKeyType() == CategoryKeyType.EXTRA) {
-            return "EXTRAS";            //$NON-NLS-1$
-        } else if (getKeyType() == CategoryKeyType.GENERIC) {
-            return "GENERIC";            //$NON-NLS-1$
-        } 
-        AndroidVersion key = getKeyValue();
-        return key.getApiString();
-     }
-
-    @Override
-    public String getLabel() {
-        String label = super.getLabel();
-        if (label == null) {
-        	CategoryKeyType key = getKeyType();
-
-            if (key == CategoryKeyType.TOOLS) {
-                label = "Tools";
-            } else if (key == CategoryKeyType.TOOLS_PREVIEW) {
-                label = "Tools (Preview Channel)";
-            } else if (key == CategoryKeyType.EXTRA) {
-                label = "Extras";
-            } else if (key == CategoryKeyType.GENERIC) {
-                label = "Generic";
-           } else {
-                if (mPlatformName != null) {
-                    label = String.format("%1$s (%2$s)", mPlatformName, getApiLabel());
-                } else {
-                    label = getApiLabel();
-                }
-            }
-            super.setLabel(label);
-        }
-        return label;
-    }
-
-    @Override
-    public void setLabel(String label) {
-        throw new UnsupportedOperationException("Use setPlatformName() instead.");
     }
 
     @Override
     public String toString() {
-        return String.format("%s <API=%s, label=%s, #items=%d>",
+        return String.format("%s <label=%s, #items=%d>",
                 this.getClass().getSimpleName(),
-                getApiLabel(),
                 getLabel(),
                 getItems().size());
     }

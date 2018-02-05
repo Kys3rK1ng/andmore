@@ -17,7 +17,7 @@
 package com.android.sdkuilib.internal.repository;
 
 /**
- * A task that executes updates a monitor to display it's status.
+ * A task that executes and updates a monitor to display it's status.
  * The task will be run in a separate job.
  * @param monitor Progress monitor
  */

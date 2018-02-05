@@ -59,8 +59,7 @@ public class Utilities {
             sizeStr = String.format("%.1f GiB",
                     Math.round(10.0 * size / (1024 * 1024 * 1024.0))/ 10.0);
         }
-
-        return String.format("Size: %1$s", sizeStr);
+        return sizeStr;
     }
 
 

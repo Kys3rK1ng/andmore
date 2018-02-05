@@ -49,6 +49,7 @@ import com.android.sdklib.devices.Screen;
 import com.android.sdklib.devices.Software;
 import com.android.sdklib.devices.Storage;
 import com.android.sdklib.internal.avd.AvdInfo;
+import com.android.sdklib.internal.avd.AvdInfo.AvdStatus;
 import com.android.sdklib.internal.avd.AvdManager;
 import com.android.sdklib.internal.avd.HardwareProperties;
 import com.android.sdklib.repository.IdDisplay;
@@ -72,40 +73,7 @@ import com.google.common.base.Joiner;
  * constructor.
  */
 class AvdCreationPresenter {
-	public enum AvdConflict
-	{
-	   NO_CONFLICT,  CONFLICT_EXISTING_AVD,  CONFLICT_INVALID_AVD,  CONFLICT_EXISTING_PATH;
-	   
-	   private AvdConflict() {}
-	}
-	public static final Pattern RE_AVD_NAME = Pattern.compile("[a-zA-Z0-9._-]+");
-	public static final String CHARS_AVD_NAME = "a-z A-Z 0-9 . _ -";
-	
-    @NonNull
-    private IWidgetAdapter mWidgets;
-    private AvdManager mAvdManager;
-    private ILogger mSdkLog;
-    private AvdInfo mAvdInfo;
-    private AvdAgent mAvdAgent;
-    private final SdkContext mSdkContext;
-    private final SdkTargets mSdkTargets;
-
-    private final TreeMap<String, IAndroidTarget> mCurrentTargets =
-            new TreeMap<String, IAndroidTarget>();
-
-    private static final AvdSkinChoice SKIN_DYNAMIC =
-        new AvdSkinChoice(SkinType.DYNAMIC, "Skin with dynamic hardware controls");
-    private static final AvdSkinChoice SKIN_NONE =
-        new AvdSkinChoice(SkinType.NONE, "No skin");
-
-    private final List<Device> mComboDevices = new ArrayList<>();
-    private final List<AvdSkinChoice> mComboSkins = new ArrayList<>();
-    private final List<ISystemImage> mComboSystemImages = new ArrayList<ISystemImage>();
-    private final List<IAndroidTarget> mComboTargets = new ArrayList<IAndroidTarget>();
-
-    private Device mInitWithDevice;
-    private AvdInfo mCreatedAvd;
-
+	/** Controls enumeration references content of IWidgetAdapter (see below) */
     public enum Ctrl {
         BUTTON_OK,
         BUTTON_BROWSE_SDCARD,
@@ -135,6 +103,15 @@ class AvdCreationPresenter {
 
         ICON_STATUS,
         TEXT_STATUS,
+    }
+    
+    /**
+     * AVD skin type. Order defines the order of the skin combo list.
+     */
+    enum SkinType {
+        DYNAMIC,
+        NONE,
+        FROM_TARGET,
     }
 
     /** Interface exposed by the view. Presenter calls this to update UI. */
@@ -167,16 +144,69 @@ class AvdCreationPresenter {
 
     }
 
+	/** AVD name conflict analysis results */
+	public enum AvdConflict
+	{
+	   NO_CONFLICT,  CONFLICT_EXISTING_AVD,  CONFLICT_INVALID_AVD,  CONFLICT_EXISTING_PATH;
+	   
+	   private AvdConflict() {}
+	}
+	
+	public static final Pattern RE_AVD_NAME = Pattern.compile("[a-zA-Z0-9._-]+");
+	public static final String CHARS_AVD_NAME = "a-z A-Z 0-9 . _ -";
+    private static final AvdSkinChoice SKIN_DYNAMIC =
+            new AvdSkinChoice(SkinType.DYNAMIC, "Skin with dynamic hardware controls");
+    private static final AvdSkinChoice SKIN_NONE =
+        new AvdSkinChoice(SkinType.NONE, "No skin");
+	
+    private final List<Device> mComboDevices = new ArrayList<>();
+    private final List<AvdSkinChoice> mComboSkins = new ArrayList<>();
+    private final List<ISystemImage> mComboSystemImages = new ArrayList<ISystemImage>();
+    private final List<IAndroidTarget> mComboTargets = new ArrayList<IAndroidTarget>();
+
+    /** SDK context */
+    private final SdkContext mSdkContext;
+    /** Container for Android targets and System images */
+    private final SdkTargets mSdkTargets;
+    /** Maps target name to target */
+    private final TreeMap<String, IAndroidTarget> mCurrentTargets =
+            new TreeMap<String, IAndroidTarget>();
+     /** The controls are contained in an AvdCreationSwtView object */
+    @NonNull
+    private IWidgetAdapter mWidgets; 
+    /** AVD Manager */
+    private AvdManager mAvdManager;
+    /** AVD Info */
+    private AvdInfo mAvdInfo;
+    /** AVD Info expanded and target */
+    private AvdAgent mAvdAgent;
+    /** The default device for this AVD - can be set after the constructor called */
+    private Device mInitWithDevice;
+    /** The AVD Info object created on successful OK press */
+    private AvdInfo mCreatedAvd;
+    /** Flag set true if AVD status is good. If false, then the old AVD is replaced or deleted depending on whether the name changed. */
+    private boolean isAvdOk;
+
+    /**
+     * Construct AvdCreationPresenter object
+     * @param sdkContext SDK context
+     * @param sdkTargets Container for Android targets and System images
+     * @param editAvdAgent AVD information to edit or null if new AVD
+     */
     public AvdCreationPresenter(@NonNull  SdkContext sdkContext,
-    		                     @NonNull SdkTargets sdkTargets,
-                                 @Nullable AvdAgent editAvdAgent) {
+    		                    @NonNull SdkTargets sdkTargets,
+                                @Nullable AvdAgent editAvdAgent) {
     	mSdkContext = sdkContext;
     	mSdkTargets = sdkTargets;
         mAvdManager = sdkContext.getAvdManager();
-        mSdkLog  = mSdkContext.getSdkLog();
         mAvdAgent = editAvdAgent;
-        if (editAvdAgent != null)
+        if (editAvdAgent != null) {
         	mAvdInfo = editAvdAgent.getAvd();
+        	// Determine AVD status
+        	isAvdOk = (mAvdInfo.getStatus() == AvdStatus.OK) && (editAvdAgent.getTarget() != null);
+        } else
+        	// AVD status is not relevant
+        	isAvdOk = true;
     }
 
     /** Returns the AVD Created, if successful. */
@@ -197,6 +227,9 @@ class AvdCreationPresenter {
         mInitWithDevice = device;
     }
 
+    /**
+     * Initialize view - called from AvdCreationSwtView.createContents()
+     */
     public void onViewInit() {
         mWidgets.setTitle(
                 mAvdInfo == null ? "Create new Android Virtual Device (AVD)"
@@ -228,10 +261,35 @@ class AvdCreationPresenter {
         validatePage();
     }
 
+    /**
+     * Handle event target has changed
+     */
+    public void onTargetComboChanged() {
+        reloadTagAbiCombo();
+        validatePage();
+    }
+
+    /**
+     * Handle event tag has changed
+     */
+    public void onTagComboChanged() {
+        reloadSkinCombo();
+        validatePage();
+    }
+
+    /**
+     * Handle event SD Card size has changed
+     */
+    public void onRadioSdCardSizeChanged() {
+        boolean sizeMode = mWidgets.isChecked(Ctrl.RADIO_SDCARD_SIZE);
+        enableSdCardWidgets(sizeMode);
+        validatePage();
+    }
+
     //-------
-
-
-
+    /**
+     * Initialize device selection combo
+     */
     private void initializeDevices() {
         DeviceManager deviceManager = mSdkContext.getDeviceManager();
         List<Device> deviceList = new ArrayList<>(deviceManager.getDevices(DeviceManager.ALL_DEVICES));
@@ -261,20 +319,27 @@ class AvdCreationPresenter {
         return null;
     }
 
-    /** Called by fillExisting/InitialDeviceInfo to select the device in the combo list. */
-    @SuppressWarnings("deprecation")
+     /**
+     * Select device in the combo list using name/id and manufacturer
+     * @param manufacturer 
+     * @param name
+     */
     private void selectDevice(String manufacturer, String name) {
         for (int i = 0, n = mComboDevices.size(); i < n; i++) {
             Device device = mComboDevices.get(i);
             if (device.getManufacturer().equals(manufacturer)
-                    && device.getName().equals(name)) {
+            		// The Device Manager inserts device id for device name
+                    && (device.getId().equals(name) || device.getDisplayName().equals(name))) {
                 mWidgets.selectComboIndex(Ctrl.COMBO_DEVICE, i);
                 break;
             }
         }
     }
 
-    /** Called by fillExisting/InitialDeviceInfo to select the device in the combo list. */
+    /**
+     * Select the device in the combo list using device object
+     * @param device
+     */
     private void selectDevice(Device device) {
         for (int i = 0, n = mComboDevices.size(); i < n; i++) {
             if (mComboDevices.get(i).equals(device)) {
@@ -284,6 +349,9 @@ class AvdCreationPresenter {
         }
     }
 
+    /**
+     * Handle device combo changed event
+     */
     void onDeviceComboChanged() {
         Device currentDevice = getSelectedDevice();
         if (currentDevice != null) {
@@ -294,6 +362,9 @@ class AvdCreationPresenter {
         validatePage();
     }
 
+    /**
+     * Handle AVD name modified event which may lead to a conflict with an existing AVD
+     */
     void onAvdNameModified() {
         String name = mWidgets.getText(Ctrl.TEXT_AVD_NAME).trim();
         if (mAvdInfo == null || !name.equals(mAvdInfo.getName())) {
@@ -323,8 +394,12 @@ class AvdCreationPresenter {
 
     }
 
-
-
+    /**
+     * 
+     * 
+     * fill device details on screen
+     * @param device
+     */
     private void fillDeviceProperties(Device device) {
         Hardware hw = device.getDefaultHardware();
         Long ram = hw.getRam().getSizeAsUnit(Storage.Unit.MiB);
@@ -463,6 +538,9 @@ class AvdCreationPresenter {
         }
     }
 
+    /**
+     * Enable cameras
+     */
     private void toggleCameras() {
         mWidgets.setEnabled(Ctrl.COMBO_FRONT_CAM, false);
         mWidgets.setEnabled(Ctrl.COMBO_BACK_CAM, false);
@@ -479,6 +557,9 @@ class AvdCreationPresenter {
         }
     }
 
+    /**
+     * Set targets selector
+     */
     private void preloadTargetCombo() {
         String selected = null;
         int index = mWidgets.getComboIndex(Ctrl.COMBO_TARGET);
@@ -493,6 +574,7 @@ class AvdCreationPresenter {
         index = -1;
 
         mComboTargets.clear();
+        // Only show targets which have system images
         for (IAndroidTarget target : mSdkTargets.getSystemImageTargets()) {
             String name;
             if (target.isPlatform()) {
@@ -527,6 +609,10 @@ class AvdCreationPresenter {
         reloadTagAbiCombo();
     }
 
+    /**
+     * Select target to display
+     * @param target
+     */
     private void selectTarget(IAndroidTarget target) {
         for (int i = 0, n = mComboTargets.size(); i < n; i++) {
             if (target == mComboTargets.get(i)) {
@@ -536,12 +622,15 @@ class AvdCreationPresenter {
         }
     }
 
+    /**
+     * Returns selected target
+     * @return IAndroidTarget object or null if target not found
+     */
     private IAndroidTarget getSelectedTarget() {
         int index = mWidgets.getComboIndex(Ctrl.COMBO_TARGET);
         if (index != -1 && index < mComboTargets.size()) {
             return mComboTargets.get(index);
         }
-
         return null;
     }
 
@@ -584,6 +673,7 @@ class AvdCreationPresenter {
             Iterator<SystemImage> iterator = systemImages.iterator();
             while(iterator.hasNext()) {
                 SystemImage systemImage = iterator.next();
+                // Match on tag if device has non-defualt value eg. "android-tv"
                 if (deviceTagId != null && !deviceTagId.equals(systemImage.getTag().getId())) {
                     continue;
                 }
@@ -611,6 +701,9 @@ class AvdCreationPresenter {
         reloadSkinCombo();
     }
 
+    /**
+     * Loads skins
+     */
     void reloadSkinCombo() {
         AvdSkinChoice selected = getSelectedSkinChoice();
 
@@ -689,6 +782,9 @@ class AvdCreationPresenter {
         mWidgets.setEnabled(Ctrl.BUTTON_BROWSE_SDCARD, !sizeMode);
     }
 
+    /**
+     * Handle SD Card event
+     */
     void onBrowseSdCard() {
         String fileName = mWidgets. openFileDialog("Choose SD Card image file.");
         if (fileName != null) {
@@ -697,6 +793,9 @@ class AvdCreationPresenter {
         validatePage();
     }
 
+    /**
+     * Validate the page and update status message
+     */
     void validatePage() {
         String error = null;
         ArrayList<String> warnings = new ArrayList<String>();
@@ -837,29 +936,11 @@ class AvdCreationPresenter {
                             mWidgets.getText(Ctrl.TEXT_AVD_NAME));
         }
 
-        if (mAvdInfo != null && !mAvdInfo.getName().equals(mWidgets.getText(Ctrl.TEXT_AVD_NAME))) {
+        if (isAvdOk && (mAvdInfo != null) && !mAvdInfo.getName().equals(mWidgets.getText(Ctrl.TEXT_AVD_NAME))) {
             warnings.add(
                     String.format("The AVD '%1$s' will be duplicated into '%2$s'.",
                         mAvdInfo.getName(),
                         mWidgets.getText(Ctrl.TEXT_AVD_NAME)));
-        }
-
-        // On Windows, display a warning if attempting to create AVD's with RAM > 512 MB.
-        // This restriction should go away when we switch to using a 64 bit emulator.
-        if (SdkConstants.CURRENT_PLATFORM == SdkConstants.PLATFORM_WINDOWS) {
-            long ramSize = 0;
-            try {
-                ramSize = Long.parseLong(mWidgets.getText(Ctrl.TEXT_RAM));
-            } catch (NumberFormatException e) {
-                // ignore
-            }
-
-            if (ramSize > 768) {
-                warnings.add(
-                    "On Windows, emulating RAM greater than 768M may fail depending on the"
-                    + " system load. Try progressively smaller values of RAM if the emulator"
-                    + " fails to launch.");
-            }
         }
 
         if (mWidgets.isChecked(Ctrl.CHECK_GPU_EMUL) && mWidgets.isChecked(Ctrl.CHECK_SNAPSHOT)) {
@@ -872,6 +953,12 @@ class AvdCreationPresenter {
         return;
     }
 
+    /**
+     * Set page status
+     * @param valid Flag set true if page is valid
+     * @param error Flag set true if page has error
+     * @param warning Flag set true if page has warning
+     */
     private void setPageValid(boolean valid, String error, String warning) {
         mWidgets.setEnabled(Ctrl.BUTTON_OK, valid);
         if (error != null && !error.isEmpty()) {
@@ -888,6 +975,10 @@ class AvdCreationPresenter {
         mWidgets.repack();
     }
 
+    /**
+     * Create AVD - called from AvdCreationSwtView.okPressed()
+     * @return flag set true if AVD created successfully
+     */
     boolean createAvd() {
         String avdName = mWidgets.getText(Ctrl.TEXT_AVD_NAME);
         if (avdName == null || avdName.isEmpty()) {
@@ -949,7 +1040,7 @@ class AvdCreationPresenter {
             skinName = s.getXDimension() + "x" + s.getYDimension();
         }
 
-        ILogger log = mSdkLog;
+        ILogger log = mSdkContext.getSdkLog();
         if (log == null || log instanceof MessageBoxLog) {
             // If the current logger is a message box, we use our own (to make sure
             // to display errors right away and customize the title).
@@ -958,6 +1049,8 @@ class AvdCreationPresenter {
                     false /* logErrorsOnly */);
         }
 
+        // NOTE: The Device Manager inserts device id for device name!
+        //  props.put(AvdManager.AVD_INI_DEVICE_NAME, d.getId());
         Map<String, String> hwProps = DeviceManager.getHardwareProperties(device);
         if (mWidgets.isChecked(Ctrl.CHECK_GPU_EMUL)) {
             hwProps.put(AvdManager.AVD_INI_GPU_EMULATION, HardwareProperties.BOOLEAN_YES);
@@ -1037,7 +1130,7 @@ class AvdCreationPresenter {
                 device.getBootProps(),
                 false, // deviceHasPlayStore
                 mWidgets.isChecked(Ctrl.CHECK_SNAPSHOT),
-                mWidgets.isChecked(Ctrl.CHECK_FORCE_CREATION),
+                !isAvdOk || mWidgets.isChecked(Ctrl.CHECK_FORCE_CREATION),
                 mAvdInfo != null, // edit existing
                 log);
 
@@ -1050,6 +1143,10 @@ class AvdCreationPresenter {
         return success;
     }
 
+    /**
+     * Returns skin
+     * @return AvdSkinChoice object or null if skin not available
+     */
     @Nullable
     private AvdSkinChoice getSelectedSkinChoice() {
         int choiceIndex = mWidgets.getComboIndex(Ctrl.COMBO_SKIN);
@@ -1059,6 +1156,10 @@ class AvdCreationPresenter {
         return null;
     }
 
+    /**
+     * Returns tag and Abi combinatin
+     * @return IdDisplay + String or null if system image not found
+     */
     @Nullable
     private Pair<IdDisplay, String> getSelectedTagAbi() {
         ISystemImage selected = getSelectedSysImg();
@@ -1067,7 +1168,11 @@ class AvdCreationPresenter {
         }
         return null;
     }
-
+    
+    /**
+     * Retruns system image
+     * @return ISystemImage object or null if not available
+     */
     @Nullable
     private ISystemImage getSelectedSysImg() {
         if (!mComboSystemImages.isEmpty()) {
@@ -1079,6 +1184,10 @@ class AvdCreationPresenter {
         return null;
     }
 
+    /** 
+     * Fill in details of an existing AVD
+     * @param avdAgent Combined AVD Info and target
+     */
     private void fillExistingAvdInfo(AvdAgent avdAgent) {
         mWidgets.setText(Ctrl.TEXT_AVD_NAME, avdAgent.getAvd().getName());
         selectDevice(avdAgent.getDeviceMfctr(), avdAgent.getDeviceName());
@@ -1194,7 +1303,6 @@ class AvdCreationPresenter {
                         break;
                     }
                 }
-
             }
 
             String cameraFront = props.get(AvdManager.AVD_INI_CAMERA_FRONT);
@@ -1243,6 +1351,11 @@ class AvdCreationPresenter {
         }
     }
 
+    /**
+     * Returns AVD configuration location as File object
+     * @param subDirectory
+     * @return File object or null if error occurs obtaining AVD base location (not expected)
+     */
     private File getAvdPath(String subDirectory)
     {
     	File file = null;
@@ -1254,11 +1367,12 @@ class AvdCreationPresenter {
     	return file;
     }
     
-    
+	/**
+	 * 	Fill i= details of existing device    
+	 * @param device The device
+	 */
     private void fillInitialDeviceInfo(Device device) {
         String name = "AVD for " + device.getDisplayName();
-        // sanitize the name
-        //name = name.replaceAll("[^0-9a-zA-Z_-]+", " ").trim().replaceAll("[ _]+", "_");
         mWidgets.setText(Ctrl.TEXT_AVD_NAME, name);
 
         // Select the device
@@ -1277,156 +1391,29 @@ class AvdCreationPresenter {
     }
 
     /**
-     * Returns the list of system images of a target.
+     * Returns the system images of a target.
      * <p/>
      * If target is null, returns an empty list. If target is an add-on with no
      * system images, return the list from its parent platform.
      *
      * @param target An IAndroidTarget. Can be null.
-     * @return A non-null ISystemImage array. Can be empty.
+     * @return ISystemImage collection. Can be empty.
      */
     @NonNull
-    private Collection<SystemImage> getSystemImages(IAndroidTarget target) {
+    private Collection<SystemImage> getSystemImages(IAndroidTarget target) 
+    {
+    	if (target == null)
+    		return Collections.emptyList();
         return mSdkTargets.getSystemImages(target);
     }
 
-    private static String getGenericLabel(Device d) {
-        return String.format(java.util.Locale.US, "%1$s (%2$s)", d.getDisplayName(),
-                getResolutionString(d));
-    }
-
-    @Nullable
-    private static String getResolutionString(Device device) {
-        Screen screen = device.getDefaultHardware().getScreen();
-        return String.format(java.util.Locale.US,
-                "%1$d \u00D7 %2$d: %3$s", // U+00D7: Unicode multiplication sign
-                screen.getXDimension(),
-                screen.getYDimension(),
-                screen.getPixelDensity().getResourceValue());
-    }
-
     /**
-     * AVD skin type. Order defines the order of the skin combo list.
+     * Returns system image matching combined target, tag and abitype
+     * @param target The target
+     * @param tag The tag
+     * @param abiType The abiType
+     * @return ISystemImage or null if system image not found
      */
-    private enum SkinType {
-        DYNAMIC,
-        NONE,
-        FROM_TARGET,
-    }
-
-    /*
-     * Choice of AVD skin: dynamic, no skin, or one from the target.
-     * The 2 "internals" skins (dynamic and no skin) have no path.
-     * The target-based skins have a path.
-     */
-    private static class AvdSkinChoice implements Comparable<AvdSkinChoice> {
-
-        private final SkinType mType;
-        private final String mLabel;
-        private final File mPath;
-
-        AvdSkinChoice(@NonNull SkinType type, @NonNull String label) {
-            this(type, label, null);
-        }
-
-        AvdSkinChoice(@NonNull SkinType type, @NonNull String label, @NonNull File path) {
-            mType = type;
-            mLabel = label;
-            mPath = path;
-        }
-
-        @NonNull
-        public SkinType getType() {
-            return mType;
-        }
-
-        @NonNull
-        public String getLabel() {
-            return mLabel;
-        }
-
-        @Nullable
-        public File getPath() {
-            return mPath;
-        }
-
-        public boolean hasPath() {
-            return mType == SkinType.FROM_TARGET;
-        }
-
-        @Override
-        public int compareTo(AvdSkinChoice o) {
-            int t = mType.compareTo(o.mType);
-            if (t == 0) {
-                t = mLabel.compareTo(o.mLabel);
-            }
-            if (t == 0 && mPath != null && o.mPath != null) {
-                t = mPath.compareTo(o.mPath);
-            }
-            return t;
-        }
-
-        @Override
-        public int hashCode() {
-            final int prime = 31;
-            int result = 1;
-            result = prime * result + ((mType == null) ? 0 : mType.hashCode());
-            result = prime * result + ((mLabel == null) ? 0 : mLabel.hashCode());
-            result = prime * result + ((mPath == null) ? 0 : mPath.hashCode());
-            return result;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (obj == null) {
-                return false;
-            }
-            if (!(obj instanceof AvdSkinChoice)) {
-                return false;
-            }
-            AvdSkinChoice other = (AvdSkinChoice) obj;
-            if (mType != other.mType) {
-                return false;
-            }
-            if (mLabel == null) {
-                if (other.mLabel != null) {
-                    return false;
-                }
-            } else if (!mLabel.equals(other.mLabel)) {
-                return false;
-            }
-            if (mPath == null) {
-                if (other.mPath != null) {
-                    return false;
-                }
-            } else if (!mPath.equals(other.mPath)) {
-                return false;
-            }
-            return true;
-        }
-
-
-    }
-
-    public void onTargetComboChanged() {
-        reloadTagAbiCombo();
-        validatePage();
-    }
-
-    public void onTagComboChanged() {
-        reloadSkinCombo();
-        validatePage();
-    }
-
-    public void onRadioSdCardSizeChanged() {
-        boolean sizeMode = mWidgets.isChecked(Ctrl.RADIO_SDCARD_SIZE);
-        enableSdCardWidgets(sizeMode);
-        validatePage();
-    }
-
     private ISystemImage getSystemImage(IAndroidTarget target, IdDisplay tag, String abiType)
     {
     	if (target != null)
@@ -1441,6 +1428,11 @@ class AvdCreationPresenter {
         return null;
     }
 
+    /**
+     * Analyse AVD name for conflict with an existing AVD
+     * @param name The AVD name
+     * @return AvdConflict + other name or null
+     */
     private Pair<AvdConflict, String> isAvdNameConflicting(String name)
     {
         boolean ignoreCase = SdkConstants.currentPlatform() == 2;
@@ -1470,4 +1462,30 @@ class AvdCreationPresenter {
         catch (AndroidLocationException e) {}
         return Pair.of(AvdConflict.NO_CONFLICT, null);
     }
+
+    /**
+     * Returns device name and resolution
+     * @param device
+     * @return String
+     */
+    private static String getGenericLabel(Device device) {
+        return String.format(java.util.Locale.US, "%1$s (%2$s)", device.getDisplayName(),
+                getResolutionString(device));
+    }
+
+    /**
+     * Returns device resolution for display
+     * @param device
+     * @return String
+     */
+    @Nullable
+    private static String getResolutionString(Device device) {
+        Screen screen = device.getDefaultHardware().getScreen();
+        return String.format(java.util.Locale.US,
+                "%1$d \u00D7 %2$d: %3$s", // U+00D7: Unicode multiplication sign
+                screen.getXDimension(),
+                screen.getYDimension(),
+                screen.getPixelDensity().getResourceValue());
+    }
+
 }

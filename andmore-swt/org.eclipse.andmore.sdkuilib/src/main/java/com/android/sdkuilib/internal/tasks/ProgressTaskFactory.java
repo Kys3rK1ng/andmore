@@ -35,7 +35,7 @@ public final class ProgressTaskFactory implements ITaskFactory {
 
     @Override
     public void start(String title, ITask task, Runnable onTerminateTask) {
-        ProgressTask p = new ProgressTask(mShell, title);
-        p.start(task);
+        ProgressTask progressTask = new ProgressTask(mShell, title);
+        progressTask.start(task, onTerminateTask);
     }
 }

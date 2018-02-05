@@ -30,5 +30,5 @@ Require-Bundle: org.eclipse.core.runtime,
  org.eclipse.jdt.core,
  org.apache.xerces,
  org.eclipse.datatools.sqltools.data.ui,
- org.eclipse.sequoyah.localization.tools
+ org.eclipse.sequoyah.localization.tools;bundle-version="0.5.2"
 Import-Package: org.eclipse.ui.texteditor

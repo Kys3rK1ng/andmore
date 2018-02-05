@@ -33,30 +33,48 @@ import com.android.sdkuilib.internal.repository.content.PackageType;
  */
 public class SystemImageInfo {
 	private static final String BLANK = "";
-
+    /** System image wrapped by this object */
 	private SystemImage systemImage;
+	/** The Android version of the owning AVD */
 	private AndroidVersion avdAndroidVersion;
 
 	/**
 	 * Construct SystemImageInfo object for given AVD info
+	 * @param avd The AVD information
 	 */
 	public SystemImageInfo(AvdInfo avd) {
 		this.systemImage = (SystemImage) avd.getSystemImage();
 		avdAndroidVersion = avd.getAndroidVersion();
 	}
 
+	/**
+	 * Returns flag set true if AVD has system image
+	 * @return boolean
+	 */
 	public boolean hasSystemImage() {
 		return systemImage != null;
 	}
-	
+
+	/**
+	 * Returns system image
+	 * @return SystemImage object
+	 */
 	public SystemImage getSystemImage() {
 		return systemImage;
 	}
 
+	/**
+	 * Set system image
+	 * @param systemImage The system image
+	 */
 	public void setSystemImage(SystemImage systemImage) {
 		this.systemImage = systemImage;
 	}
 
+	/**
+	 * Returns Android version of the sustem image, if available, otherwise AVD Android version
+	 * @return AndroidVersion object
+	 */
 	public AndroidVersion getAndroidVersion() {
 		if (hasSystemImage()) {
 	        DetailsTypes.ApiDetailsType details =
@@ -65,7 +83,11 @@ public class SystemImageInfo {
 		}
 		return avdAndroidVersion;
 	}
-	
+
+	/**
+	 * Returns package type characterisation of system image type
+	 * @return PackageType enum
+	 */
 	public PackageType getPackageType() {
 		if (hasSystemImage()) {
 	        DetailsTypes.ApiDetailsType details =
@@ -78,9 +100,14 @@ public class SystemImageInfo {
 	        	return PackageType.add_ons;
 	        }
 		}
+		// Default to platforms in absence of system image
 		return PackageType.platforms;
 	}
 
+	/**
+	 * Returns vendor of system image
+	 * @return vendor or blank if vendor not available
+	 */
     public String getVendor() {
 		if (hasSystemImage()) {
 	        PackageType packageType = getPackageType();

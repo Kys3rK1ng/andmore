@@ -241,7 +241,6 @@ public class EmulatorConfigTab extends AbstractLaunchConfigurationTab {
         }
         SdkCallAgent callAgent = new SdkCallAgent(
         		sdk.getAndroidSdkHandler(),
-        		sdk.getRepoManager(),
         		new AdtConsoleSdkLog());
         mPreferredAvdSelector = 
         		new AvdSelectorWindow(avdOffsetComp, callAgent);

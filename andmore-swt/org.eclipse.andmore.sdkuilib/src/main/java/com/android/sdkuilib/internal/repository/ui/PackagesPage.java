@@ -16,21 +16,20 @@
 
 package com.android.sdkuilib.internal.repository.ui;
 
-import java.io.File;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.TreeSet;
 
 import org.eclipse.andmore.base.resources.ImageFactory;
 import org.eclipse.andmore.sdktool.SdkContext;
-import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.viewers.CheckStateChangedEvent;
 import org.eclipse.jface.viewers.CheckboxTreeViewer;
 import org.eclipse.jface.viewers.ColumnViewerToolTipSupport;
@@ -47,6 +46,8 @@ import org.eclipse.jface.window.ToolTip;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.DisposeEvent;
 import org.eclipse.swt.events.DisposeListener;
+import org.eclipse.swt.events.ModifyEvent;
+import org.eclipse.swt.events.ModifyListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Color;
@@ -54,38 +55,27 @@ import org.eclipse.swt.graphics.Font;
 import org.eclipse.swt.graphics.FontData;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.Label;
-import org.eclipse.swt.widgets.Link;
 import org.eclipse.swt.widgets.MenuItem;
-import org.eclipse.swt.widgets.Text;
+import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Tree;
 import org.eclipse.swt.widgets.TreeColumn;
 
-import com.android.annotations.NonNull;
-import com.android.repository.api.LocalPackage;
-import com.android.repository.api.PackageOperation;
-import com.android.repository.api.ProgressIndicator;
-import com.android.repository.api.ProgressRunner;
 import com.android.repository.api.RemotePackage;
-import com.android.repository.api.RepoManager.RepoLoadedCallback;
-import com.android.repository.api.Uninstaller;
-import com.android.repository.impl.meta.Archive;
-import com.android.repository.impl.meta.RepositoryPackages;
-import com.android.sdklib.AndroidVersion;
-import com.android.sdklib.repository.installer.SdkInstallerUtil;
-import com.android.sdklib.repository.meta.DetailsTypes.PlatformDetailsType;
-import com.android.sdkuilib.internal.repository.ITask;
-import com.android.sdkuilib.internal.repository.ITaskFactory;
-import com.android.sdkuilib.internal.repository.ITaskMonitor;
 import com.android.sdkuilib.internal.repository.LoadPackagesRequest;
+import com.android.sdkuilib.internal.repository.LoadPackagesTask;
+import com.android.sdkuilib.internal.repository.PackageDeleteTask;
 import com.android.sdkuilib.internal.repository.PackageInstallListener;
 import com.android.sdkuilib.internal.repository.PackageManager;
+import com.android.sdkuilib.internal.repository.Settings;
 import com.android.sdkuilib.internal.repository.content.CategoryKeyType;
+import com.android.sdkuilib.internal.repository.content.INode;
 import com.android.sdkuilib.internal.repository.content.PackageAnalyser;
 import com.android.sdkuilib.internal.repository.content.PackageAnalyser.PkgState;
 import com.android.sdkuilib.internal.repository.content.PackageContentProvider;
@@ -97,9 +87,9 @@ import com.android.sdkuilib.internal.repository.content.PkgCellAgent;
 import com.android.sdkuilib.internal.repository.content.PkgCellLabelProvider;
 import com.android.sdkuilib.internal.repository.content.PkgItem;
 import com.android.sdkuilib.internal.repository.content.PkgTreeColumnViewerLabelProvider;
+import com.android.sdkuilib.internal.repository.content.ViewTreeRootNode;
 import com.android.sdkuilib.internal.tasks.ILogUiProvider;
 import com.android.sdkuilib.internal.widgets.PackageTypesSelector;
-import com.android.sdkuilib.repository.SdkUpdaterWindow.SdkInvocationContext;
 import com.android.sdkuilib.ui.GridDataBuilder;
 import com.android.sdkuilib.ui.GridLayoutBuilder;
 
@@ -112,8 +102,8 @@ public final class PackagesPage extends Composite {
 
     enum MenuAction {
         RELOAD  (SWT.NONE,  "Reload"),
-        //TOGGLE_SHOW_INSTALLED_PKG   (SWT.CHECK, "Show Installed Packages"),
         TOGGLE_SHOW_OBSOLETE_PKG  (SWT.CHECK, "Show Obsolete Packages"),
+        TOGGLE_FORCE_HTTP (SWT.CHECK, "Force HTTP protocol"),
         TOGGLE_SHOW_NEW_PKG  (SWT.CHECK, "Show New Packages"),
         FILTER_PACKAGES  (SWT.NONE,  "Filter Packages");
 
@@ -134,69 +124,120 @@ public final class PackagesPage extends Composite {
         }
     };
 
-    // Column ids
-	public static final int NAME = 1;
-	public static final int API = 2;
-	public static final int REVISION = 3;
-	public static final int STATUS = 4;
+    /**
+     * Package types required to install a platform
+     */
+	public static final PackageType[] TOOLS_PACKAGE_TYPES = {
+			PackageType.tools,
+			PackageType.platform_tools,
+			PackageType.build_tools
+	};
+	private static final List<RemotePackage> EMPTY_PACKAGE_LIST = Collections.emptyList();
+	private static final String NONE_INSTALLED = "Done. Nothing was installed.";
+	private static final String[] UPDATE_CHANNELS ;
 
+	static {
+		UPDATE_CHANNELS = new String[] { "Stable", "Beta", "Dev", "Canary" };
+	}
+	
 	private final Map<MenuAction, MenuItem> mMenuActions = new HashMap<MenuAction, MenuItem>();
 
+	/** SDK context - includes logger and process indicator */
     private final SdkContext mSdkContext;
-    //private final SdkInvocationContext mContext;
+    /** Builds and maintains the tree that underlies the SDK packages view */
     private final PackageAnalyser mPackageAnalyser;
-
-    private boolean mDisplayArchives = false;
-    private boolean mOperationPending;
-    private ProgressRunner mProgressRunner;
-    private Composite mGroupPackages;
-    private Text mTextSdkOsPath;
-    private Button mCheckFilterObsolete;
-    //private Button mCheckFilterInstalled;
-    private Button mCheckFilterNew;
-    private Button mCheckAll;
-    private Composite mGroupOptions;
-    private Composite mGroupSdk;
-    private Button mButtonDelete;
-    private Button mButtonInstall;
-    private Button mButtonPkgTypes;
-    private Button mButtonCancel;
-    private Font mTreeFontItalic;
-    private TreeColumn mTreeColumnName;
-    private CheckboxTreeViewer mTreeViewer;
-    private ILogUiProvider mSdkProgressControl;
-    private ITaskFactory mTaskFactory;
+    /** Package filter which allows user to select which package types are displayed */
     private PackageFilter mPackageFilter;
+    /** A factory for various task types linked to a ProgressView control */
     private SdkProgressFactory factory;
+    /** List of installed packages update on every packages installation */
+    private List<RemotePackage> packagesInstalled;
+    /** Flag to disable install and delete buttons after selection until operation completed */
+    private volatile boolean mOperationPending;
+    /** Shell of parent composite */
+    private Shell shell;
+    /** Composite enclosing packages view */
+    private Composite mGroupPackages;
+    /** Checkbox to show obsolete packages */
+    private Button mCheckFilterObsolete;
+    /** Checkbox to show packages availailable to install */
+    private Button mCheckFilterNew;
+    /** Checkbox to show all available packages, not just the latest versios */
+    private Button mCheckAll;
+    private Combo mComboChannel;
+    /** Group exclosing options to show packages */
+    private Composite mGroupOptions;
+    /** Top composite */
+    private Composite mGroupSdk;
+    /** Delete packages button */
+    private Button mButtonDelete;
+    /** Install packages button */
+    private Button mButtonInstall;
+    /** Package types selection button */
+    private Button mButtonPkgTypes;
+    /** Cancel/OK button */
+    private Button mButtonCancel;
+    /** Font used to render italic text */
+    private Font mTreeFontItalic;
+    /** Tree view */
+    private CheckboxTreeViewer mTreeViewer;
 
+    /**
+     * Construct PackagesPage object
+     * @param parent Parent composite
+     * @param swtStyle SWT.NONE
+     * @param sdkContext SDK context
+     * @param packageTypeSet Set of package types on which to filter. An empty set indicates no filtering
+     * @param tagFilter Tag to filter packages = applies only to system images
+     */
     public PackagesPage(
             Composite parent,
             int swtStyle,
             SdkContext sdkContext,
-            SdkInvocationContext context,
-            Set<PackageType> packageTypeSet) 
+            Set<PackageType> packageTypeSet,
+            String tagFilter) 
     {
         super(parent, swtStyle);
+        shell = getShell();
         mSdkContext = sdkContext;
         mPackageFilter = new PackageFilter(packageTypeSet);
+        if ((tagFilter != null) && !tagFilter.isEmpty())
+        	mPackageFilter.setTag(tagFilter);
         mPackageAnalyser = new PackageAnalyser(sdkContext);
-        //mContext = context;
+        mPackageAnalyser.getRootNode().setPackageFilter(mPackageFilter);
+        packagesInstalled = EMPTY_PACKAGE_LIST;
         createContents(this);
         postCreate();
     }
 
+    /**
+     * Handle event ProgressView is created. Loading of packages can commence.
+     * @param factory A factory for various task types linked to a ProgressView control
+     */
     public void onReady(SdkProgressFactory factory) {
     	this.factory = factory;
-    	mProgressRunner = factory;
-    	mSdkProgressControl = factory.getProgressControl();
-    	mTaskFactory = factory;
     	startLoadPackages();
     }
 
+    /**
+     * Handle event thet SDK has been reloaded
+     */
     public void onSdkReload() {
     	startLoadPackages();
     }
 
+    /**
+     * Returns list of packages installed last time this operation was invoked
+     * @return
+     */
+	public List<RemotePackage> getPackagesInstalled() {
+		return packagesInstalled;
+	}
+
+	/**
+	 * Create controls. Invoked from the constructor.
+	 * @param parent Parent composite
+	 */
     private void createContents(Composite parent) 
     {
     	Color foreColor = parent.getForeground();
@@ -210,17 +251,10 @@ public final class PackagesPage extends Composite {
         GridDataBuilder.create(mGroupSdk).hFill().vCenter().hGrab().hSpan(2);
         GridLayoutBuilder.create(mGroupSdk).columns(2);
 
-        Label label1 = new Label(mGroupSdk, SWT.NONE);
-        label1.setText("SDK Path:");
-
-        mTextSdkOsPath = new Text(mGroupSdk, SWT.NONE);
-        GridDataBuilder.create(mTextSdkOsPath).hFill().vCenter().hGrab();
-        mTextSdkOsPath.setEnabled(false);
-
-        Group groupPackages = new Group(parent, SWT.SHADOW_NONE);
+        Group groupPackages = new Group(parent, SWT.NONE);
         mGroupPackages = groupPackages;
         GridDataBuilder.create(mGroupPackages).fill().grab().hSpan(2);
-        groupPackages.setText("Packages");
+        groupPackages.setText("Packages by Category");
         GridLayoutBuilder.create(groupPackages).columns(2);
 
         mTreeViewer = new CheckboxTreeViewer(groupPackages, SWT.BORDER);
@@ -255,10 +289,12 @@ public final class PackagesPage extends Composite {
 
         // column name icon is set when loading depending on the current filter type
         // (e.g. API level or source)
-        TreeViewerColumn columnName = new TreeViewerColumn(mTreeViewer, SWT.NONE);
-        mTreeColumnName = columnName.getColumn();
-        mTreeColumnName.setText("Name");
-        mTreeColumnName.setWidth(400);
+        TreeViewerColumn columnName = new TreeViewerColumn(mTreeViewer, SWT.CENTER);
+        TreeColumn treeColumn1 = columnName.getColumn();
+        treeColumn1.setText("Name");
+        treeColumn1.setWidth(400);
+        // Android icon placed on left of Name column is a remnant of a feature which has been removed
+        //treeColumn1.setImage(getImage(PackagesPageIcons.ICON_SORT_BY_API));
 
         TreeViewerColumn columnApi = new TreeViewerColumn(mTreeViewer, SWT.NONE);
         TreeColumn treeColumn2 = columnApi.getColumn();
@@ -280,16 +316,19 @@ public final class PackagesPage extends Composite {
         treeColumn4.setAlignment(SWT.LEAD);
         treeColumn4.setWidth(205);
 
-        mGroupOptions = new Group(groupPackages, SWT.SHADOW_OUT);
+        mGroupOptions = new Group(groupPackages, SWT.SHADOW_NONE);
         GridDataBuilder.create(mGroupOptions).hFill().vCenter().hGrab();
-        GridLayoutBuilder.create(mGroupOptions).columns(6).noMargins();
+        GridLayoutBuilder.create(mGroupOptions).columns(8).noMargins();
  
-        // Options line 1, 6 columns
+        // Options line 1, 8 columns
 
         Label label3 = new Label(mGroupOptions, SWT.NONE);
         label3.setText("Show:");
         GridDataBuilder.create(label3).vSpan(2).vTop();
-        mCheckFilterNew = new Button(mGroupOptions, SWT.CHECK);
+        Composite groupShow = new Composite(mGroupOptions, SWT.NONE);
+        GridLayoutBuilder.create(groupShow).columns(2).noMargins();
+        GridDataBuilder.create(groupShow).hFill().vCenter();
+        mCheckFilterNew = new Button(groupShow, SWT.CHECK);
         GridDataBuilder.create(mCheckFilterNew).vTop();
         mCheckFilterNew.setText("New");
         mCheckFilterNew.setToolTipText("Show latest available new packages");
@@ -303,7 +342,7 @@ public final class PackagesPage extends Composite {
             }
         });
         mCheckFilterNew.setSelection(true);
-        mCheckAll = new Button(mGroupOptions, SWT.CHECK);
+        mCheckAll = new Button(groupShow, SWT.CHECK);
         GridDataBuilder.create(mCheckAll).vSpan(2).vTop();
         mCheckAll.setText("All");
         mCheckAll.setToolTipText("Show all available new packages");
@@ -314,29 +353,14 @@ public final class PackagesPage extends Composite {
                 refreshViewerInput();
             }
         });
-/*
-        mCheckFilterInstalled = new Button(mGroupOptions, SWT.CHECK);
-        mCheckFilterInstalled.setToolTipText("Show Installed");
-        mCheckFilterInstalled.addSelectionListener(new SelectionAdapter() 
-        {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                refreshViewerInput();
-            }
-        });
-        mCheckFilterInstalled.setSelection(true);
-        mCheckFilterInstalled.setText("Installed");
-*/
-        //new Label(mGroupOptions, SWT.NONE);
-
         Label label4 = new Label(mGroupOptions, SWT.NONE);
         label4.setText("Select:");
         GridDataBuilder.create(label4).vSpan(2).vTop();
-        Link linkSelectUpdates = new Link(mGroupOptions, SWT.NONE);
-        linkSelectUpdates.setText("<a>Select Updates</a>");
-        linkSelectUpdates.setToolTipText("Selects all items that are updates.");
-        //GridDataBuilder.create(linkSelectUpdates).hFill();
-        linkSelectUpdates.addSelectionListener(new SelectionAdapter() 
+        Button buttonSelectUpdates = new Button(mGroupOptions, SWT.FLAT);
+        GridDataBuilder.create(buttonSelectUpdates).vTop().wHint(100).hHint(22);
+        buttonSelectUpdates.setText("Updates");
+        buttonSelectUpdates.setToolTipText("Selects all items that are updates.");
+        buttonSelectUpdates.addSelectionListener(new SelectionAdapter() 
         {
             @Override
             public void widgetSelected(SelectionEvent e) {
@@ -345,28 +369,45 @@ public final class PackagesPage extends Composite {
             }
         });
 
-        // placeholder between "select all" and "install"
-        //Label placeholder = new Label(mGroupOptions, SWT.NONE);
-        //GridDataBuilder.create(placeholder).hFill().hGrab();
-
-        mButtonInstall = new Button(mGroupOptions, SWT.NONE);
-        mButtonInstall.setText("");  //$NON-NLS-1$  placeholder, filled in updateButtonsState()
+        Label label6 = new Label(mGroupOptions, SWT.NONE);
+        label6.setText("Categories:");
+        GridDataBuilder.create(label6).vTop();
+        mButtonPkgTypes = new Button(mGroupOptions, SWT.NONE);
+        mButtonPkgTypes.setText("Filter...");  
+        mButtonPkgTypes.setToolTipText("Click to filter by category");
+        GridDataBuilder.create(mButtonPkgTypes).wHint(100).hHint(22).vTop();
+        mButtonPkgTypes.addSelectionListener(new SelectionAdapter() 
+        {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+            	selectPackages();
+            }
+        });
+		mButtonInstall = new Button(mGroupOptions, SWT.NONE);
+        mButtonInstall.setText("");  // filled in updateButtonsState()
         mButtonInstall.setToolTipText("Install one or more packages");
         GridDataBuilder.create(mButtonInstall).vCenter().wHint(150).hFill().hGrab().hRight();
         mButtonInstall.addSelectionListener(new SelectionAdapter() 
         {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                onButtonInstall();  //$hide$
+                onButtonInstall();  
             }
         });
-
-        // Options line 2, 6 columns
-
-        //Label placeholder2 = new Label(mGroupOptions, SWT.NONE);
-        //GridDataBuilder.create(placeholder2).hFill().hGrab();
-
+        mButtonCancel = new Button(mGroupOptions, SWT.NONE);
+        mButtonCancel.setText("OK");  
+        GridDataBuilder.create(mButtonCancel).wHint(100).vSpan(2).vBottom();
+        mButtonCancel.addSelectionListener(new SelectionAdapter() 
+        {
+            @Override
+            public void widgetSelected(SelectionEvent e) {
+                mSdkContext.getProgressIndicator().cancel();  
+                if (!mOperationPending)
+                    shell.close();
+            }
+        });
         mCheckFilterObsolete = new Button(mGroupOptions, SWT.CHECK);
+        GridDataBuilder.create(mCheckFilterObsolete).vTop();
         mCheckFilterObsolete.setText("Obsolete");
         mCheckFilterObsolete.setToolTipText("Also show obsolete packages");
         mCheckFilterObsolete.addSelectionListener(new SelectionAdapter() 
@@ -385,15 +426,11 @@ public final class PackagesPage extends Composite {
         });
         mCheckFilterObsolete.setSelection(false);
 
-        // placeholder before "deselect"
-        //new Label(mGroupOptions, SWT.NONE);
-        //new Label(mGroupOptions, SWT.NONE);
-
-        Link linkDeselect = new Link(mGroupOptions, SWT.NONE);
-        linkDeselect.setText("<a>Deselect All</a>");
-        linkDeselect.setToolTipText("Deselects all the currently selected items");
-        //GridDataBuilder.create(linkDeselect).hFill();
-        linkDeselect.addSelectionListener(new SelectionAdapter() 
+        Button buttonDeselect = new Button(mGroupOptions, SWT.FLAT);
+        GridDataBuilder.create(buttonDeselect).vTop().wHint(100).hHint(22);
+        buttonDeselect.setText("Deselect All");
+        buttonDeselect.setToolTipText("Deselects all the currently selected items");
+        buttonDeselect.addSelectionListener(new SelectionAdapter() 
         {
             @Override
             public void widgetSelected(SelectionEvent e) {
@@ -401,48 +438,38 @@ public final class PackagesPage extends Composite {
                 onDeselectAll();
             }
         });
+        
+        Label label5 = new Label(mGroupOptions, SWT.NONE);
+        label5.setText("Channel:");
+        GridDataBuilder.create(label5).vTop();
+        mComboChannel = new Combo(mGroupOptions, SWT.DROP_DOWN | SWT.READ_ONLY);
+        GridDataBuilder.create(mComboChannel).wHint(80).vTop();
+        mComboChannel.setToolTipText("Select update channel. \"Canary\" is the least stable.");
+        for (String channelName: UPDATE_CHANNELS)
+        	mComboChannel.add(channelName);
+        mComboChannel.select(0);
+		mComboChannel.addModifyListener(new ModifyListener(){
 
-        // placeholder between "deselect" and "delete"
-        //placeholder = new Label(mGroupOptions, SWT.NONE);
-        //GridDataBuilder.create(placeholder).hFill().hGrab();
-
+			@Override
+			public void modifyText(ModifyEvent arg0) {
+				int index = mComboChannel.getSelectionIndex();
+				if (index != -1) {
+					mSdkContext.getSettings().setChannel(index);
+					startLoadPackages();
+				}
+			}});
         mButtonDelete = new Button(mGroupOptions, SWT.NONE);
-        mButtonDelete.setText("");  //$NON-NLS-1$  placeholder, filled in updateButtonsState()
+        mButtonDelete.setText("");  // filled in updateButtonsState()
         mButtonDelete.setToolTipText("Delete one ore more installed packages");
         GridDataBuilder.create(mButtonDelete).vCenter().wHint(150).hFill().hGrab().hRight();
         mButtonDelete.addSelectionListener(new SelectionAdapter() 
         {
             @Override
             public void widgetSelected(SelectionEvent e) {
-                onButtonDelete();  //$hide$
+                onButtonDelete();  
             }
         });
         mGroupOptions.pack();
-        Group controls = new Group(groupPackages, SWT.NONE);
-        GridDataBuilder.create(controls).vCenter();
-        GridLayoutBuilder.create(controls);
-        mButtonPkgTypes = new Button(controls, SWT.NONE);
-        mButtonPkgTypes.setText("Package Types...");  
-        GridDataBuilder.create(mButtonPkgTypes).wHint(100);
-        mButtonPkgTypes.addSelectionListener(new SelectionAdapter() 
-        {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-            	selectPackages();
-            }
-        });
-        mButtonCancel = new Button(controls, SWT.NONE);
-        mButtonCancel.setText("Cancel");  
-        GridDataBuilder.create(mButtonCancel).wHint(100);
-        mButtonCancel.addSelectionListener(new SelectionAdapter() 
-        {
-            @Override
-            public void widgetSelected(SelectionEvent e) {
-                mSdkContext.getProgressIndicator().cancel();  //$hide$
-                getShell().close();
-            }
-        });
-        controls.pack();
         FontData fontData = tree.getFont().getFontData()[0];
         fontData.setStyle(SWT.ITALIC);
         mTreeFontItalic = new Font(tree.getDisplay(), fontData);
@@ -453,26 +480,28 @@ public final class PackagesPage extends Composite {
                 mTreeFontItalic = null;
             }
         });
-        mTreeViewer.setContentProvider(new PackageContentProvider(mTreeViewer, mPackageFilter));
+        mTreeViewer.setContentProvider(new PackageContentProvider(mPackageFilter));
         PkgCellAgent pkgCellAgent = new PkgCellAgent(mSdkContext, mPackageAnalyser, mTreeFontItalic);
         columnApi.setLabelProvider(
-                new PkgTreeColumnViewerLabelProvider(new PkgCellLabelProvider(pkgCellAgent, PkgCellLabelProvider.API)));
+                new PkgTreeColumnViewerLabelProvider(new PkgCellLabelProvider(pkgCellAgent, PkgCellAgent.API)));
         columnName.setLabelProvider(
-                new PkgTreeColumnViewerLabelProvider(new PkgCellLabelProvider(pkgCellAgent, PkgCellLabelProvider.NAME)));
+                new PkgTreeColumnViewerLabelProvider(new PkgCellLabelProvider(pkgCellAgent, PkgCellAgent.NAME)));
         columnStatus.setLabelProvider(
-                new PkgTreeColumnViewerLabelProvider(new PkgCellLabelProvider(pkgCellAgent, PkgCellLabelProvider.STATUS)));
+                new PkgTreeColumnViewerLabelProvider(new PkgCellLabelProvider(pkgCellAgent, PkgCellAgent.STATUS)));
         columnRevision.setLabelProvider(
-                new PkgTreeColumnViewerLabelProvider(new PkgCellLabelProvider(pkgCellAgent, PkgCellLabelProvider.REVISION)));
+                new PkgTreeColumnViewerLabelProvider(new PkgCellLabelProvider(pkgCellAgent, PkgCellAgent.REVISION)));
     }
 
-    protected void selectPackages() {
-    	PackageTypesSelector pkgTypesSelector = new PackageTypesSelector(getShell(), mPackageFilter.getPackageTypes());
-    	if (pkgTypesSelector.open()) {
-    		mPackageFilter.setPackageTypes(pkgTypesSelector.getPackageTypeSet());
-    		refreshViewerInput();
-    	}
-	}
+    // -- Start of internal part ----------
+    // Hide everything down-below from SWT designer
+    //$hide>>$
 
+
+    /**
+     * Returns image specified by name
+     * @param filename Image filename to be located by SDK context helper
+     * @return Image object - do not dispose - or null if image not found
+     */
 	private Image getImage(String filename) {
             ImageFactory imgFactory = mSdkContext.getSdkHelper().getImageFactory();
             if (imgFactory != null) {
@@ -482,13 +511,12 @@ public final class PackagesPage extends Composite {
     }
 
 
-    // -- Start of internal part ----------
-    // Hide everything down-below from SWT designer
-    //$hide>>$
-
-
     // --- menu interactions ---
-
+	/**
+	 * Register menu action with corresponding menu item
+	 * @param action Menu action
+	 * @param item Menu item
+	 */
     protected void registerMenuAction(final MenuAction action, MenuItem item) {
     	item.addSelectionListener(new SelectionAdapter() {
             @Override
@@ -499,9 +527,6 @@ public final class PackagesPage extends Composite {
                 case RELOAD:
                 	startLoadPackages();
                     break;
-//                case TOGGLE_SHOW_INSTALLED_PKG:
-//                    button = mCheckFilterInstalled;
-//                    break;
                 case TOGGLE_SHOW_OBSOLETE_PKG:
                     button = mCheckFilterObsolete;
                     break;
@@ -511,6 +536,11 @@ public final class PackagesPage extends Composite {
                 case FILTER_PACKAGES:
                 	selectPackages();
                 	break;
+                case TOGGLE_FORCE_HTTP:
+                	Settings settings = mSdkContext.getSettings();
+                	boolean value = !settings.getForceHttp();
+                	settings.setForceHttp(value);
+                	factory.setSecondaryText((value ? "F" : "Do not f") + "orce http");
                 }
 
                 if (button != null && !button.isDisposed()) {
@@ -548,6 +578,9 @@ public final class PackagesPage extends Composite {
 
     // --- internal methods ---
 
+    /**
+     * Update checkboxes tied to menu items
+     */
     private void updateMenuCheckmarks() {
         for (Entry<MenuAction, MenuItem> entry : mMenuActions.entrySet()) {
             MenuAction action = entry.getKey();
@@ -561,14 +594,14 @@ public final class PackagesPage extends Composite {
             Button button = null;
 
             switch (action) {
-            //case TOGGLE_SHOW_INSTALLED_PKG:
-            //    button = mCheckFilterInstalled;
-            //    break;
             case TOGGLE_SHOW_OBSOLETE_PKG:
                 button = mCheckFilterObsolete;
                 break;
             case TOGGLE_SHOW_NEW_PKG:
                 button = mCheckFilterNew;
+                break;
+            case TOGGLE_FORCE_HTTP:
+                value = mSdkContext.getSettings().getForceHttp();
                 break;
             case RELOAD:
             case FILTER_PACKAGES:
@@ -586,85 +619,58 @@ public final class PackagesPage extends Composite {
         }
     }
 
-    private boolean postCreate() {
-    	File sdkLocation = mSdkContext.getLocation();
-    	// Only show SDK location if is valid
-    	if (sdkLocation.exists() && sdkLocation.isDirectory())
-            mTextSdkOsPath.setText(sdkLocation.toString());
-
-        ((PackageContentProvider) mTreeViewer.getContentProvider()).setDisplayArchives(
-                mDisplayArchives);
-
+    /**
+     * Complete PackagesPage construction after all controls created. This is invoked from the constructor.
+     */
+    private void postCreate() {
         ColumnViewerToolTipSupport.enableFor(mTreeViewer, ToolTip.NO_RECREATE);
-        return true;
-
     }
 
+    /**
+     * Start package load. Both local and remote packages are (re-)loaded using a LoadPackagesTask object.
+     */
 	private void startLoadPackages() {
- 
-        if (mTreeColumnName.isDisposed()) {
-            // If the UI got disposed, don't try to load anything since we won't be
-            // able to display it anyway.
-            return;
-        }
-        // Packages will be loaded when onReady() is called
-        if (mProgressRunner == null)
+        // Packages will be loaded after onReady() is called
+        if (factory == null)
         	return;
-        mTreeColumnName.setImage(getImage(PackagesPageIcons.ICON_SORT_BY_API));
-
+        // The package manager controls package download and installation
         PackageManager packageManager = mSdkContext.getPackageManager();
-    	LoadPackagesRequest loadPackagesRequest = new LoadPackagesRequest(mProgressRunner);
-    	RepoLoadedCallback onSuccess = new RepoLoadedCallback(){
+        // The "load packages" task adapts the Android Repository API to work with the package manager, package filter and package analyser
+        LoadPackagesTask loadPackagesTask = new LoadPackagesTask(packageManager, mPackageAnalyser, mPackageFilter, factory) {
+
+        	/**
+        	 * Task to run after packages are installed
+        	 */
 			@Override
-			public void doRun(RepositoryPackages packages) {
-                if (!(mGroupPackages == null || mGroupPackages.isDisposed())) 
-                {
-                	packageManager.setPackages(packages);
-                	mPackageAnalyser.loadPackages();
-                    Collection<LocalPackage> localPackages = packageManager.getRepositoryPackages().getLocalPackagesForPrefix(PackageType.platforms.toString());
-                    boolean hasPlatform = false;
-                    if (!localPackages.isEmpty()) {
-                    	Iterator<LocalPackage> iterator = localPackages.iterator();
-                    	while (iterator.hasNext())
-                    		if (iterator.next().getTypeDetails() instanceof PlatformDetailsType) {
-                    			hasPlatform = true;
-                    			break;
-                    		}
-                    }
-                    if (!hasPlatform) {
-                        mSdkProgressControl.setDescription("No Android Platform is installed. Please select one and then click on \"Install\" button.");
-                        Set<PackageType> packageTypeSet = new TreeSet<>();
-                        packageTypeSet.addAll(mPackageFilter.getPackageTypes());
-                        packageTypeSet.add(PackageType.platforms);
-                        mPackageFilter.setPackageTypes(packageTypeSet);
-                        
-                    } else {
-                        mSdkProgressControl.setDescription("Done loading packages.");
-                    }
-                    mGroupPackages.getDisplay().syncExec(new Runnable(){
-						@Override
-						public void run() {
-		                    // automatically select all new and update packages.
-		                    Object[] checked = mTreeViewer.getCheckedElements();
-		                    if (checked == null || checked.length == 0)
-		                        onSelectPackages(
-		                                true,  //selectUpdates,
-		                                true); //selectTop
-			                refreshViewerInput();
-						}});
-                }
+			public void onLoadComplete() {
+                // If first time, automatically select all new and update packages.
+                boolean hasCheckedItem = mPackageAnalyser.hasCheckedItem();
+                Display.getDefault().syncExec(new Runnable(){
+					@Override
+					public void run() {
+	                    if (!hasCheckedItem) {
+	                        onSelectPackages(
+	                                true,  //selectUpdates,
+	                                true); //selectTop
+	                        // set the initial expanded state
+	                        expandInitial(mTreeViewer.getInput());
+	                        updateButtonsState();
+	                        updateMenuCheckmarks();
+	                    }
+	                    else
+	                    	refreshViewerInput();
+					}});
 			}};
-		Runnable onError = new Runnable(){
-			@Override
-			public void run() {
-				mSdkProgressControl.setDescription("Package operation did not complete due to error or cancellation");
-			}};
+    	LoadPackagesRequest loadPackagesRequest = new LoadPackagesRequest(factory);
 		//loadPackagesRequest.setOnLocalComplete(Collections.singletonList(onLocalComplete));
-    	loadPackagesRequest.setOnSuccess(Collections.singletonList(onSuccess));
-    	loadPackagesRequest.setOnError(Collections.singletonList(onError));
+    	loadPackagesRequest.setOnSuccess(Collections.singletonList(loadPackagesTask));
+    	loadPackagesRequest.setOnError(Collections.singletonList(loadPackagesTask));
     	packageManager.requestRepositoryPackages(loadPackagesRequest);
     }
 
+	/**
+	 * Refresh view
+	 */
     private void refreshViewerInput() {
         if (!mGroupPackages.isDisposed()) {
             try {
@@ -681,17 +687,16 @@ public final class PackagesPage extends Composite {
     
     /**
      * Invoked from {@link #refreshViewerInput()} to actually either set the
-     * input of the tree viewer or refresh it if it's the <em>same</em> input
-     * object.
+     * input of the tree viewer or refresh it depending on view status
      */
     private void setViewerInput() {
-        List<PkgCategory<AndroidVersion>> cats = mPackageAnalyser.getApiCategories();
-        if ((mTreeViewer.getInput() != cats) || mPackageFilter.isFilterOn()) {
+        ViewTreeRootNode rootNode = mPackageAnalyser.getRootNode();
+        boolean isTreeDirty = mPackageAnalyser.isTreeDirty();
+        if (isTreeDirty || mPackageFilter.isFilterOn()) {
             // set initial input
-        	if (mPackageFilter.isFilterOn())
-                mTreeViewer.setInput(mPackageFilter.getFilteredApiCategories(cats));
-        	else
-                mTreeViewer.setInput(cats);
+            mTreeViewer.setInput(rootNode);
+            if (isTreeDirty)
+            	mPackageAnalyser.setDirty(false);
         } else {
             // refresh existing, which preserves the expanded state, the selection
             // and the checked state.
@@ -701,11 +706,14 @@ public final class PackagesPage extends Composite {
 
     /**
      * Decide whether to keep an item in the current tree based on user-chosen filter options.
+     * @param treeElement Tree item to filter
+     * @return Flag set true if element should be retained
      */
     private boolean filterViewerItem(Object treeElement) {
     	boolean selectNew = mCheckFilterNew.getSelection();
         if (treeElement instanceof PkgCategory) {
             PkgCategory<?> cat = (PkgCategory<?>) treeElement;
+            // Select all new items only if both "New" and "All" checkboxes ticked
             cat.setSelectAllPackages(selectNew && mCheckAll.getSelection());
             if (!cat.getItems().isEmpty()) {
                 // A category is hidden if all of its content is hidden.
@@ -716,32 +724,25 @@ public final class PackagesPage extends Composite {
                         return true;
                     }
                 }
+                cat.setChecked(false);
                 return false;
             }
         }
-
         if (treeElement instanceof PkgItem) {
             PkgItem item = (PkgItem) treeElement;
-
             if (!mCheckFilterObsolete.getSelection()) {
                 if (item.isObsolete()) {
+                	item.setChecked(false);
                     return false;
                 }
             }
-/*
-            if (!mCheckFilterInstalled.getSelection()) {
-                if (item.getState() == PkgState.INSTALLED) {
-                    return false;
-                }
-            }
-*/
             if (!selectNew) {
-                if (item.getState() == PkgState.NEW ) { //|| item.hasUpdatePkg()
+                if (item.getState() == PkgState.NEW ) {
+                	item.setChecked(false);
                     return false;
                 }
             }
         }
-
         return true;
     }
 
@@ -750,8 +751,7 @@ public final class PackagesPage extends Composite {
      * at least one installed item and collapses the ones with nothing installed.
      *
      * TODO: change this to only change the expanded state on categories that have not
-     * been touched by the user yet. Once we do that, call this every time a new source
-     * is added or the list is reloaded.
+     * been touched by the user yet. Once we do that, call this every time the list is reloaded.
      */
     private void expandInitial(Object elem) {
         if (elem == null) {
@@ -791,7 +791,6 @@ public final class PackagesPage extends Composite {
      *
      * When unchecking, all sub-tree items checkboxes are cleared too.
      * When checking a source, all of its packages are checked too.
-     * When checking a package, only its compatible archives are checked.
      */
     private void onTreeCheckStateChanged(CheckStateChangedEvent event) {
         boolean checked = event.getChecked();
@@ -799,11 +798,15 @@ public final class PackagesPage extends Composite {
 
         assert event.getSource() == mTreeViewer;
 
-        // When selecting, we want to only select compatible archives and expand the super nodes.
+        // When selecting, we want to expand the super nodes.
         checkAndExpandItem(elem, checked, true/*fixChildren*/, true/*fixParent*/);
         updateButtonsState();
     }
 
+    /**
+     * Handle double-clicking on tree
+     * @param event Event
+     */
     private void onTreeDoubleClick(DoubleClickEvent event) {
         assert event.getSource() == mTreeViewer;
         ISelection sel = event.getSelection();
@@ -841,6 +844,13 @@ public final class PackagesPage extends Composite {
         }
     }
 
+    /**
+     * Check and expand one item - recursive
+     * @param elem Tree item
+     * @param checked Flag set true if item is checked
+     * @param fixChildren Flag set true if children to be processed
+     * @param fixParent Flag set true if parent to be proecessed
+     */
     private void checkAndExpandItem(
             Object elem,
             boolean checked,
@@ -850,14 +860,13 @@ public final class PackagesPage extends Composite {
             (ITreeContentProvider) mTreeViewer.getContentProvider();
 
         // fix the item itself
+        INode node = (INode)elem;
         if (checked != mTreeViewer.getChecked(elem)) {
             mTreeViewer.setChecked(elem, checked);
+        } 
+        if (checked != node.isChecked()) {
+            node.setChecked(checked);
         }
-        if (elem instanceof PkgItem) {
-            // update the PkgItem to reflect the selection
-            ((PkgItem) elem).setChecked(checked);
-        }
-
         if (!checked) {
             if (fixChildren) {
                 // when de-selecting, we deselect all children too
@@ -879,26 +888,21 @@ public final class PackagesPage extends Composite {
 
         // When selecting, we also select sub-items (for a category)
         if (fixChildren) {
-            if (elem instanceof PkgCategory || elem instanceof PkgItem) {
+            if (elem instanceof PkgCategory) {
                 Object[] children = provider.getChildren(elem);
                 for (Object child : children) {
                     checkAndExpandItem(child, true, fixChildren, false/*fixParent*/);
                 }
                 // only fix the parent once the last sub-item is set
-                if (elem instanceof PkgCategory) {
-                    if (children.length > 0) {
-                        checkAndExpandItem(
-                                children[0], true, false/*fixChildren*/, true/*fixParent*/);
-                    } else {
-                        mTreeViewer.setChecked(elem, false);
-                    }
+                if (children.length > 0) {
+                    checkAndExpandItem(
+                            children[0], true, false/*fixChildren*/, true/*fixParent*/);
+                } else {
+                    mTreeViewer.setChecked(elem, false);
                 }
-            } else if (elem instanceof Package) {
-                // in details mode, we auto-select compatible packages
-                selectCompatibleArchives(elem, provider);
             }
         }
-
+        // For case all packages in same state, set owning category to that state
         if (fixParent && checked && elem instanceof PkgItem) {
             Object parent = provider.getParent(elem);
             if (!mTreeViewer.getChecked(parent)) {
@@ -910,23 +914,31 @@ public final class PackagesPage extends Composite {
                         break;
                     }
                 }
-                if (allChecked) {
-                    mTreeViewer.setChecked(parent, true);
+                boolean isCategoryChecked = mTreeViewer.getChecked(parent);
+                if (allChecked != isCategoryChecked) {
+                    mTreeViewer.setChecked(parent, allChecked);
                 }
             }
         }
     }
 
-    private void selectCompatibleArchives(Object pkg, ITreeContentProvider provider) {
-        for (Object archive : provider.getChildren(pkg)) {
-            if (archive instanceof Archive) {
-                mTreeViewer.setChecked(archive, ((Archive) archive).isCompatible());
-            }
-        }
-    }
+    /**
+     * Handle event "Select Packages" button pressed.
+     */
+    protected void selectPackages() {
+    	// Allow user to select packages from a dialog
+    	PackageTypesSelector pkgTypesSelector = new PackageTypesSelector(shell, mPackageFilter.getPackageTypes());
+    	if (pkgTypesSelector.open()) {
+    		// Refresh initial view
+    		mPackageFilter.setPackageTypes(pkgTypesSelector.getPackageTypeSet());
+    		onSelectPackages(true /* check updates */, false /* check top API */);
+    	}
+	}
 
     /**
      * Mark packages as checked according to selection criteria.
+     * @param selectUpdates Flag set true if updates to be checked
+     * @param selectTop Flag set true if top API platform to be checked if not installed
      */
     private void onSelectPackages(boolean selectUpdates, boolean selectTop) {
         // This will update the tree's "selected" state and then invoke syncViewerSelection()
@@ -934,20 +946,22 @@ public final class PackagesPage extends Composite {
         mPackageAnalyser.checkNewUpdateItems(
                 selectUpdates,
                 selectTop);
-        mTreeViewer.setInput(mPackageAnalyser.getApiCategories());
+        mTreeViewer.setInput(mPackageAnalyser.getRootNode());
         syncViewerSelection();
+        updateButtonsState();
     }
 
     /**
-     * Deselect all checked PkgItems.
+     * Deselect all checked packages.
      */
     private void onDeselectAll() {
         mPackageAnalyser.uncheckAllItems();
         syncViewerSelection();
+        updateButtonsState();
     }
 
     /**
-     * Synchronize the 'checked' state of PkgItems in the tree with their internal isChecked state.
+     * Synchronize the 'checked' state of packages in the tree with their internal checked state.
      */
     private void syncViewerSelection() {
         ITreeContentProvider provider = (ITreeContentProvider) mTreeViewer.getContentProvider();
@@ -977,14 +991,12 @@ public final class PackagesPage extends Composite {
                         }
                     }
                 }
-
-                if (allChecked != mTreeViewer.getChecked(cat)) {
+                boolean isCategoryChecked = mTreeViewer.getChecked(cat);
+                if (allChecked != isCategoryChecked) {
                     mTreeViewer.setChecked(cat, allChecked);
                 }
             }
         }
-
-        updateButtonsState();
     }
 
     /**
@@ -995,222 +1007,181 @@ public final class PackagesPage extends Composite {
     private void beginOperationPending() {
         mOperationPending = true;
         updateButtonsState();
+		Display.getDefault().syncExec(new Runnable(){
+			
+			@Override
+			public void run() {
+				// Change OK to Stop
+				// Note startLoadPackages() will update button staate on completion
+                mButtonCancel.setText("Stop"); 
+			}});
     }
 
+    /**
+     * Cancel operation pending state
+     */
     private void endOperationPending() {
         mOperationPending = false;
-        updateButtonsState();
     }
 
     /**
      * Updates the Install and Delete Package buttons.
      */
     private void updateButtonsState() {
-        if (!mButtonInstall.isDisposed()) {
-            int numPackages = getPackagesForInstall(null /*archives*/);
-
-            mButtonInstall.setEnabled((numPackages > 0) && !mOperationPending);
-            mButtonInstall.setText(
-                    numPackages == 0 ? "Install packages..." :          // disabled button case
-                        numPackages == 1 ? "Install 1 package..." :
-                            String.format("Install %d packages...", numPackages));
-        }
-
-        if (!mButtonDelete.isDisposed()) {
-            // We can only delete local archives
-            int numPackages = getPackagesToDelete(null /*outMsg*/, null /*outArchives*/);
-
-            mButtonDelete.setEnabled((numPackages > 0) && !mOperationPending);
-            mButtonDelete.setText(
-                    numPackages == 0 ? "Delete packages..." :           // disabled button case
-                        numPackages == 1 ? "Delete 1 package..." :
-                            String.format("Delete %d packages...", numPackages));
-        }
+    	// Do as job as searching for packages is not suited to Display thread
+        Job job = new Job("Update install/delete buttons") {
+            @Override
+            protected IStatus run(IProgressMonitor m) {
+            	try {
+			        if (!mButtonInstall.isDisposed()) {
+			            int packageCount = mPackageAnalyser.getPackagesToInstall(mPackageFilter).size();
+			            Display.getDefault().syncExec(new Runnable() {
+	
+							@Override
+							public void run() {
+					            mButtonInstall.setEnabled((packageCount > 0) && !mOperationPending);
+					            mButtonInstall.setData(packageCount);
+					            mButtonInstall.setText(
+					            		packageCount == 0 ? "Install packages..." :          // disabled button case
+					            			packageCount == 1 ? "Install 1 package..." :
+					                            String.format("Install %d packages...", packageCount));
+			                }
+			            });
+			        }
+			        if (!mButtonDelete.isDisposed()) {
+			            // We can only delete local archives
+			            List<PkgItem> packageItems = mPackageAnalyser.getPackagesToDelete(mPackageFilter);
+			            int packageCount = packageItems.size();
+			            Display.getDefault().syncExec(new Runnable(){
+	
+							@Override
+							public void run() {
+					            mButtonDelete.setEnabled((packageCount > 0) && !mOperationPending);
+					            mButtonDelete.setData(packageCount);
+					            mButtonDelete.setText(
+					            		packageCount == 0 ? "Delete packages..." :           // disabled button case
+					            			packageCount == 1 ? "Delete 1 package..." :
+					                            String.format("Delete %d packages...", packageCount));
+							}});
+			        }
+			        return Status.OK_STATUS;
+            	} catch (Exception e) {
+            		mSdkContext.getSdkLog().error(e,"Button update error");
+            		return Status.CANCEL_STATUS;
+            	}
+            }
+        };
+        job.setPriority(Job.INTERACTIVE);
+        job.schedule();
     }
 
     /**
-     * Called when the Install Package button is selected.
+     * Handle event "Install Package" button is selected.
      * Collects the packages to be installed and shows the installation window.
      */
     private void onButtonInstall() {
         beginOperationPending();
-    	List<PkgItem> requiredPackages = new ArrayList<>();
-    	getPackagesForInstall(requiredPackages);
-    	PackageInstaller packageInstaller = new PackageInstaller(requiredPackages, factory);
-    	packageInstaller.installPackages(getShell(), mSdkContext, new PackageInstallListener(){
-
-			@Override
-			public void onPackagesInstalled(int count) {
-				Display.getDefault().syncExec(new Runnable(){
-
-					@Override
-					public void run() {
-			            endOperationPending();
-			            // The local package list has changed, make sure to refresh it
-			            startLoadPackages();
-		                mButtonCancel.setText("OK");  
-					}});
-			}});
-    }
-
-    /**
-     * Selects the packages that can be installed.
-     * This can be used with a null {@code outPackageItems} just to count the number of
-     * installable packages.
-     *
-     * @param outPackageItems A package item list to return remote packages.
-     *   This can be null.
-     * @return The number of archives that can be installed.
-     */
-    private int getPackagesForInstall(List<PkgItem> outPackageItems) {
-        if (mTreeViewer == null ||
-            mTreeViewer.getTree() == null ||
-            mTreeViewer.getTree().isDisposed()) {
-            return 0;
-        }
-        Object[] checked = mTreeViewer.getCheckedElements();
-        if (checked == null) {
-            return 0;
-        }
-        int count = 0;
-        for (Object c : checked) {
-            if (c instanceof PkgItem) {
-                PkgItem packageItem = (PkgItem)c;
-                RemotePackage remotePackage = null;
-                if (packageItem.hasUpdatePkg()) {
-            		remotePackage = packageItem.getUpdatePkg().getRemote();
-                } else if (packageItem.getState() == PkgState.NEW) {
-                	remotePackage = (RemotePackage) packageItem.getMainPackage();
-                }
-            if (remotePackage != null) {
-                count++;
-                if (outPackageItems != null) {
-                	outPackageItems.add(packageItem);
-                    }
-                }
+    	// Do as job as searching for packages is not suited to Display thread
+        Job job = new Job("Install packages") {
+            @Override
+            protected IStatus run(IProgressMonitor m) {
+            	try {
+			    	List<PkgItem> requiredPackages = mPackageAnalyser.getPackagesToInstall(mPackageFilter);
+			    	PackageInstaller packageInstaller = new PackageInstaller(requiredPackages, factory);
+			    	if (packagesInstalled != EMPTY_PACKAGE_LIST)
+			    		packagesInstalled.clear();
+			    	ILogUiProvider sdkProgressControl = factory.getProgressControl();
+			    	PackageInstallListener installListener = new PackageInstallListener(){
+			
+						@Override
+						public void onPackageInstalled(RemotePackage packageInstalled) {
+					    	if (packagesInstalled == EMPTY_PACKAGE_LIST)
+					    		packagesInstalled = new ArrayList<>();
+					    	packagesInstalled.add(packageInstalled);
+					    	sdkProgressControl.setDescription(String.format("Installed package %s", packageInstalled.getDisplayName()));
+						}
+			
+						@Override
+						public void onInstallComplete(int packageCount) {
+			            	boolean success = packageCount > 0;
+							if (!success)
+								sdkProgressControl.setDescription(NONE_INSTALLED);
+							else {
+					        	sdkProgressControl.setDescription(String.format("Done. %1$d %2$s installed.",
+					        			packageCount,
+					        			packageCount == 1 ? "package" : "packages"));
+							}
+				            endOperationPending();
+							if (success) 
+								// The local package list has changed, make sure to refresh it
+								startLoadPackages();
+							onPackageInstall(success);
+						}};
+			    	packageInstaller.installPackages(shell, mSdkContext, installListener);
+			    	return Status.OK_STATUS;
+            	} catch (Exception e) {
+            		mSdkContext.getSdkLog().error(e, "Error while installing packages");
+		            endOperationPending();
+					onPackageInstall(false);
+            		return Status.CANCEL_STATUS;
+            	}
             }
-        }
-        return count;
+        };
+        job.setPriority(Job.INTERACTIVE);
+        job.schedule();
     }
 
     /**
-     * Called when the Delete Package button is selected.
+     * Handle event "Delete Package" button is selected.
      * Collects the packages to be deleted, prompt the user for confirmation
      * and actually performs the deletion.
      */
     private void onButtonDelete() {
-        final String title = "Delete SDK Package";
-        StringBuilder msg = new StringBuilder("Are you sure you want to delete:");
+    	PackageDeleteTask packageDeleteTask = new PackageDeleteTask(shell, mSdkContext, mPackageAnalyser, mPackageFilter);
+        beginOperationPending();
+        Runnable onCompletion = new Runnable(){
 
-        // A list of package items to delete
-        final ArrayList<PkgItem> outPackageItems = new ArrayList<PkgItem>();
-
-        getPackagesToDelete(msg, outPackageItems);
-
-        if (!outPackageItems.isEmpty()) {
-            msg.append("\n").append("This cannot be undone.");  //$NON-NLS-1$
-            if (MessageDialog.openQuestion(getShell(), title, msg.toString())) {
-                beginOperationPending();
-                Runnable onCompletion = new Runnable(){
-
-					@Override
-					public void run() {
-	                    endOperationPending();
-
-	                    // The local package list has changed, make sure to refresh it
-	                	startLoadPackages();
-	                    mButtonCancel.setText("OK");  
-					}};
-                mTaskFactory.start("Delete Package", new ITask() {
-                    @Override
-                    public void run(ITaskMonitor monitor) {
-                        monitor.setProgressMax(outPackageItems.size() + 1);
-                        for (PkgItem packageItem : outPackageItems) {
-                        	LocalPackage localPackage = (LocalPackage)packageItem.getMainPackage();
-                            monitor.setDescription("Deleting '%1$s' (%2$s)",
-                            		localPackage.getDisplayName(),
-                            		localPackage.getPath());
-
-                            // Delete the actual package
-                            Uninstaller uninstaller = SdkInstallerUtil.findBestInstallerFactory(localPackage, mSdkContext.getHandler())
-                                    .createUninstaller(localPackage, mSdkContext.getRepoManager(), mSdkContext.getFileOp());
-                            if (applyPackageOperation(uninstaller)) {
-                            	packageItem.markDeleted();
-                            } else {
-                                // there was an error, abort.
-                                monitor.error(null, "Uninstall of package failed due to an error");
-                                monitor.setProgressMax(0);
-                                break;
-                            }
-                            monitor.incProgress(1);
-                            if (monitor.isCancelRequested()) {
-                                break;
-                            }
-                        }
-
-                        monitor.incProgress(1);
-                        monitor.setDescription("Done");
-                        mPackageAnalyser.removeDeletedNodes();
-                    }
-                }, onCompletion);
-             }
-        }
-    }
-
-
-	private boolean applyPackageOperation(
-            @NonNull PackageOperation operation) {
-    	ProgressIndicator progressIndicator = mSdkContext.getProgressIndicator();
-        return operation.prepare(progressIndicator) && operation.complete(progressIndicator);
+			@Override
+			public void run() {
+				boolean success = false;
+				try {
+	                endOperationPending();
+	                // The local package list has changed, make sure to refresh it
+	            	startLoadPackages();
+	            	success = true;
+				} catch (Exception e) {
+					mSdkContext.getSdkLog().error(e, "Error after package delete operation");
+		            endOperationPending();
+				} finally {
+					onPackageInstall(success);
+				}
+			}};
+        factory.start("Delete Package", packageDeleteTask, onCompletion);
     }
 
     /**
-     * Selects the archives that can be deleted and collect their names.
-     * This can be used with a null {@code outArchives} and a null {@code outMsg}
-     * just to count the number of archives to be deleted.
-     *
-     * @param outMsg A StringBuilder where the names of the packages to be deleted is
-     *   accumulated. This is used to confirm deletion with the user.
-     * @param outPackageItems A package item list to return local packages
-     *   This can be null.
-     * @return The number of packages that can be deleted.
+     * Handle event package install/delete completed
+     * @param success Flag set true if update completed successfully
      */
-    private int getPackagesToDelete(StringBuilder outMsg, List<PkgItem> outPackageItems) {
-        if (mTreeViewer == null ||
-                mTreeViewer.getTree() == null ||
-                mTreeViewer.getTree().isDisposed()) {
-            return 0;
-        }
-        Object[] checked = mTreeViewer.getCheckedElements();
-        if (checked == null) {
-            // This should not happen since the button should be disabled
-            return 0;
-        }
-
-        int count = 0;
-        for (Object c : checked) {
-            if (c instanceof PkgItem) {
-                PkgItem packageItem = (PkgItem) c;
-                PkgState state = packageItem.getState();
-                if (state == PkgState.INSTALLED) {
-                    LocalPackage localPackage = (LocalPackage)packageItem.getMainPackage();
-                    count++;
-                    if (outMsg != null) {
-                        File dir = new File(localPackage.getPath());
-                        if (dir.isDirectory()) {
-                            outMsg.append("\n - ")    //$NON-NLS-1$
-                                  .append(localPackage.getDisplayName());
-                        }
-                    }
-                    if (outPackageItems != null) {
-                    	outPackageItems.add(packageItem);
-                    }
-                }
-            }
-        }
-        return count;
+    private void onPackageInstall(boolean success) {
+		Display.getDefault().syncExec(new Runnable(){
+			
+			@Override
+			public void run() {
+				// Change Cancel to OK
+				// Note startLoadPackages() will update button staate on completion
+                mButtonCancel.setText("OK");  
+				// Restore Install and Delete button states
+				int installCount = ((Integer)mButtonInstall.getData()).intValue();
+				if (installCount > 0)
+					mButtonInstall.setEnabled(true);
+				int deleteCount = ((Integer)mButtonDelete.getData()).intValue();
+				if (deleteCount > 0)
+					mButtonDelete.setEnabled(true);
+			}});
     }
 
-    // --- End of hiding from SWT Designer ---
+
+     // --- End of hiding from SWT Designer ---
     //$hide<<$
 }

@@ -58,7 +58,7 @@ public abstract class GridDialog extends Dialog {
      * created with the <var>numColumn</var> and <var>makeColumnsEqualWidth</var> parameters
      * passed to {@link #GridDialog(Shell, int, boolean)}.
      * <p/>
-     * This is called by the parent's {@link #createContents(Composite)}.
+     * This is called by {@link #createDialogArea(Composite)}.
      *
      * @param parent the parent composite.
      */

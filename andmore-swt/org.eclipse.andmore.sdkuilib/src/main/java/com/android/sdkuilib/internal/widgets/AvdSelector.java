@@ -24,9 +24,15 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Formatter;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.andmore.base.resources.ImageFactory;
 import org.eclipse.andmore.sdktool.SdkContext;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.jface.viewers.DecorationOverlayIcon;
@@ -55,31 +61,30 @@ import org.eclipse.swt.widgets.TableItem;
 
 import com.android.SdkConstants;
 import com.android.annotations.NonNull;
-import com.android.annotations.Nullable;
 import com.android.prefs.AndroidLocation.AndroidLocationException;
+import com.android.repository.api.LocalPackage;
 import com.android.repository.io.FileOp;
+import com.android.sdklib.AndroidVersion;
 import com.android.sdklib.IAndroidTarget;
 import com.android.sdklib.internal.avd.AvdInfo;
 import com.android.sdklib.internal.avd.AvdInfo.AvdStatus;
 import com.android.sdklib.internal.avd.AvdManager;
 import com.android.sdklib.repository.IdDisplay;
+import com.android.sdklib.repository.meta.DetailsTypes.PlatformDetailsType;
 import com.android.sdklib.repository.targets.SystemImage;
-import com.android.sdkuilib.internal.repository.ITask;
-import com.android.sdkuilib.internal.repository.ITaskMonitor;
 import com.android.sdkuilib.internal.repository.avd.AvdAgent;
+import com.android.sdkuilib.internal.repository.avd.EmulatorTask;
 import com.android.sdkuilib.internal.repository.avd.SdkTargets;
 import com.android.sdkuilib.internal.repository.avd.SystemImageInfo;
 import com.android.sdkuilib.internal.repository.ui.AvdManagerWindowImpl1;
+import com.android.sdkuilib.internal.repository.ui.ManagerControls;
 import com.android.sdkuilib.internal.tasks.ProgressTask;
 import com.android.sdkuilib.repository.AvdManagerWindow.AvdInvocationContext;
+import com.android.sdkuilib.ui.AdtUpdateDialog;
 import com.android.sdkuilib.ui.AvdDisplayMode;
-import com.android.sdkuilib.ui.GridDialog;
 import com.android.sdkuilib.widgets.MessageBoxLog;
-import com.android.utils.GrabProcessOutput;
-import com.android.utils.GrabProcessOutput.IProcessOutput;
-import com.android.utils.GrabProcessOutput.Wait;
 import com.android.utils.ILogger;
-import com.android.utils.NullLogger;
+import com.android.utils.Pair;
 
 
 /**
@@ -88,39 +93,53 @@ import com.android.utils.NullLogger;
  * After using one of the constructors, call {@link #setSelection(AvdInfo)},
  * {@link #setSelectionListener(SelectionListener)} and finally use
  * {@link #getSelected()} to retrieve the selection.
+ * <p/>
+ * The parent control must implement the ManagerControls interface to bind
+ * Refresh and OK buttons to this table.
  */
 public final class AvdSelector {
     private static final String STARTING_EMULATOR = "Starting Android Emulator";
+    /** Device tags which have dedicated images */
+    private static final String[] DEVICE_IMAGE_TAGS = { "android-tv", "android-wear" };
 
 	private static int NUM_COL = 2;
 
+	/** MANAGER, SIMPLE_CHECK and SIMPLE_SELECTION */
     private final AvdDisplayMode mDisplayMode;
+    /** Container for Android targets and System images */
     private final SdkTargets mSdkTargets;
+    /** Binds to manager refresh and close buttons */
+    private final ManagerControls managerControls;
+    /** Android Virtual Device Manager for AVD creation, maintenance and storage */
     private AvdManager mAvdManager;
-    private Table mTable;
-    private Button mDeleteButton;
-    private Button mDetailsButton;
-    private Button mNewButton;
-    private Button mEditButton;
-    private Button mRefreshButton;
-    private Button mManagerButton;
-    private Button mRepairButton;
-    private Button mStartButton;
-    private Button mOkButton;
-
+    /** External selection listener */
     private SelectionListener mSelectionListener;
+    /** Optional target filter */
     private IAvdFilter mTargetFilter;
 
     /** Defaults to true. Changed by the {@link #setEnabled(boolean)} method to represent the
      * "global" enabled state on this composite. */
     private boolean mIsEnabled = true;
-
+    /** Guard against refresh recursion */
+    private boolean mInternalRefresh;
+    /** SDK context */
+    private final SdkContext mSdkContext;
+    /** Image factory. Images are not to be disposed by callers */
     private ImageFactory mImageFactory;
+   
+    // Controls
+    private Shell mShell;
+    private Table mTable;
+    private Button mDeleteButton;
+    private Button mDetailsButton;
+    private Button mNewButton;
+    private Button mEditButton;
+    private Button mManagerButton;
+    private Button mRepairButton;
+    private Button mStartButton;
     private Image mBrokenImage;
     private Image mInvalidImage;
-    private final SdkContext mSdkContext;
 
-    private boolean mInternalRefresh;
 
     /**
      * A filter to control the whether or not an AVD should be displayed by the AVD Selector.
@@ -162,7 +181,7 @@ public final class AvdSelector {
 
         @Override
         public boolean accept(AvdAgent avdAgent) {
-            if (avdAgent != null) {
+            if ((avdAgent != null) && (avdAgent.getTarget() != null)) {
                 return mTarget.canRunOn(avdAgent.getTarget());
             }
 
@@ -183,229 +202,61 @@ public final class AvdSelector {
      *
      * @param parent The parent composite where the selector will be added.
      * @param sdkContext SDK handler and repo manager
-     * @param manager the AVD manager.
      * @param filter When non-null, will allow filtering the AVDs to display.
      * @param displayMode The display mode ({@link DisplayMode}).
-     * @param sdkLog The logger. Cannot be null.
+     * @param managerControls Binds to manager refresh and close buttons
      */
     public AvdSelector(Composite parent,
             SdkContext sdkContext,
             IAvdFilter filter,
-            AvdDisplayMode displayMode) {
+            AvdDisplayMode displayMode,
+            ManagerControls managerControls) {
     	mSdkTargets = new SdkTargets(sdkContext);
         mSdkContext = sdkContext;
         mAvdManager = sdkContext.getAvdManager();
         mTargetFilter = filter;
         mDisplayMode = displayMode;
-
-        // get some bitmaps.
-        mImageFactory = mSdkContext.getSdkHelper().getImageFactory();
-        mBrokenImage = mImageFactory.getImageByName("warning_icon16.png");
-        mInvalidImage = mImageFactory.getImageByName("reject_icon16.png");
-
-        // Layout has 2 columns
-        Composite group = new Composite(parent, SWT.NONE);
-        GridLayout gl;
-        group.setLayout(gl = new GridLayout(NUM_COL, false /*makeColumnsEqualWidth*/));
-        gl.marginHeight = gl.marginWidth = 0;
-        group.setLayoutData(new GridData(GridData.FILL_BOTH));
-        group.setFont(parent.getFont());
-
-        int style = SWT.FULL_SELECTION | SWT.SINGLE | SWT.BORDER;
-        if (displayMode == AvdDisplayMode.SIMPLE_CHECK) {
-            style |= SWT.CHECK;
-        }
-        mTable = new Table(group, style);
-        mTable.setHeaderVisible(true);
-        mTable.setLinesVisible(false);
-        setTableHeightHint(0);
-
-        Composite buttons = new Composite(group, SWT.NONE);
-        buttons.setLayout(gl = new GridLayout(1, false /*makeColumnsEqualWidth*/));
-        gl.marginHeight = gl.marginWidth = 0;
-        buttons.setLayoutData(new GridData(GridData.FILL_VERTICAL));
-        buttons.setFont(group.getFont());
-
-        if (displayMode == AvdDisplayMode.MANAGER) {
-            mNewButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-            mNewButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-            mNewButton.setText("Create...");
-            mNewButton.setToolTipText("Creates a new AVD.");
-            mNewButton.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent arg0) {
-                    onNew();
-                }
-            });
-        }
-
-
-        mStartButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-        mStartButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-        mStartButton.setText("Start...");
-        mStartButton.setToolTipText("Starts the selected AVD.");
-        mStartButton.addSelectionListener(new SelectionAdapter() {
+        this.managerControls = managerControls;
+        managerControls.addRefreshListener(0, new SelectionAdapter() {
             @Override
-            public void widgetSelected(SelectionEvent arg0) {
-                onStart();
-            }
-        });
-
-        @SuppressWarnings("unused")
-        Label spacing = new Label(buttons, SWT.NONE);
-
-        if (displayMode == AvdDisplayMode.MANAGER) {
-            mEditButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-            mEditButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-            mEditButton.setText("Edit...");
-            mEditButton.setToolTipText("Edit an existing AVD.");
-            mEditButton.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent arg0) {
-                    onEdit();
-                }
-            });
-
-            mRepairButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-            mRepairButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-            mRepairButton.setText("Repair...");
-            mRepairButton.setToolTipText("Repairs the selected AVD.");
-            mRepairButton.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent arg0) {
-                    onRepair();
-                }
-            });
-
-            mDeleteButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-            mDeleteButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-            mDeleteButton.setText("Delete...");
-            mDeleteButton.setToolTipText("Deletes the selected AVD.");
-            mDeleteButton.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent arg0) {
-                    onDelete();
-                }
-            });
-        }
-
-        mDetailsButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-        mDetailsButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-        mDetailsButton.setText("Details...");
-        mDetailsButton.setToolTipText("Displays details of the selected AVD.");
-        mDetailsButton.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent arg0) {
-                onDetails();
-            }
-        });
-
-        Composite padding = new Composite(buttons, SWT.NONE);
-        padding.setLayoutData(new GridData(GridData.FILL_VERTICAL));
-
-        mRefreshButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-        mRefreshButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-        mRefreshButton.setText("Refresh");
-        mRefreshButton.setToolTipText("Reloads the list of AVD.\nUse this if you create AVDs from the command line.");
-        mRefreshButton.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent arg0) {
+            public void widgetSelected(SelectionEvent event) {
                 refresh(true);
             }
         });
-
-        if (displayMode != AvdDisplayMode.MANAGER) {
-            mManagerButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-            mManagerButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-            mManagerButton.setText("Manager...");
-            mManagerButton.setToolTipText("Launches the AVD manager.");
-            mManagerButton.addSelectionListener(new SelectionAdapter() {
-                @Override
-                public void widgetSelected(SelectionEvent e) {
-                    onAvdManager();
-                }
-            });
-            addOkButton(buttons, parent.getShell());
-        } else {
-            addOkButton(buttons, parent.getShell());
-            Composite legend = new Composite(group, SWT.NONE);
-            legend.setLayout(gl = new GridLayout(4, false /*makeColumnsEqualWidth*/));
-            gl.marginHeight = gl.marginWidth = 0;
-            legend.setLayoutData(new GridData(GridData.FILL, GridData.BEGINNING, true, false,
-                    NUM_COL, 1));
-            legend.setFont(group.getFont());
-
-            new Label(legend, SWT.NONE).setImage(mBrokenImage);
-            new Label(legend, SWT.NONE).setText("A repairable Android Virtual Device.");
-            new Label(legend, SWT.NONE).setImage(mInvalidImage);
-            new Label(legend, SWT.NONE).setText("An Android Virtual Device that failed to load. Click 'Details' to see the error.");
-        }
-
-        // create the table columns
-        final TableColumn column0 = new TableColumn(mTable, SWT.NONE);
-        column0.setText("AVD Name");
-        final TableColumn column1 = new TableColumn(mTable, SWT.NONE);
-        column1.setText("Target Name");
-        final TableColumn column2 = new TableColumn(mTable, SWT.NONE);
-        column2.setText("Platform");
-        final TableColumn column3 = new TableColumn(mTable, SWT.NONE);
-        column3.setText("API Level");
-        final TableColumn column4 = new TableColumn(mTable, SWT.NONE);
-        column4.setText("CPU/ABI");
-
-        adjustColumnsWidth(mTable, column0, column1, column2, column3, column4);
-        setupSelectionListener(mTable);
-        fillTable(mTable);
-        setEnabled(true);
-    }
-
-    private void addOkButton(Composite buttons, Shell shell) {
-    	mOkButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
-    	mOkButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
-    	mOkButton.setText("OK");
-    	mOkButton.addSelectionListener(new SelectionAdapter() {
-            @Override
-            public void widgetSelected(SelectionEvent arg0) {
-                shell.close();
-             }
-        });
-    	shell.setDefaultButton(mOkButton);
+        mShell = parent.getShell();
+        mImageFactory = mSdkContext.getSdkHelper().getImageFactory();
+        mBrokenImage = mImageFactory.getImageByName("warning_icon16.png");
+        mInvalidImage = mImageFactory.getImageByName("reject_icon16.png");
+        createContent(parent, displayMode);
     }
     
     /**
      * Creates a new SDK Target Selector, and fills it with a list of {@link AvdInfo}.
      *
      * @param parent The parent composite where the selector will be added.
-     * @param manager the AVD manager.
+     * @param sdkContext SDK handler and repo manager
      * @param displayMode The display mode ({@link DisplayMode}).
-     * @param sdkLog The logger. Cannot be null.
+     * @param managerControls Binds to manager refresh and close buttons
      */
     public AvdSelector(Composite parent,
             SdkContext sdkContext,
-            AvdDisplayMode displayMode) {
-        this(parent, sdkContext, (IAvdFilter)null /* filter */, displayMode);
+            AvdDisplayMode displayMode,
+            ManagerControls managerControls) {
+        this(parent, sdkContext, (IAvdFilter)null /* filter */, displayMode, managerControls);
     }
 
+    /** 
+     * Returns a flag set true if this control is disposed 
+     * @return boolean
+     */
+    public boolean isDisposed() {
+    	return mShell.isDisposed();
+    }
+ 
     /**
-     * *** NOT REFERENCED ***
-     * Creates a new SDK Target Selector, and fills it with a list of {@link AvdInfo}, filtered
-     * by an {@link IAndroidTarget}.
-     * <p/>Only the {@link AvdInfo} able to run applications developed for the given
-     * {@link IAndroidTarget} will be displayed.
-     *
-     * @param parent The parent composite where the selector will be added.
-     * @param manager the AVD manager.
-     * @param filter Only shows the AVDs matching this target (must not be null).
-     * @param displayMode The display mode ({@link DisplayMode}).
-     * @param sdkLog The logger. Cannot be null.
+     * Returns container for Android targets and System images
+     * @return SdkTargets object
      */
-    public AvdSelector(Composite parent,
-            SdkContext sdkContext,
-            IAndroidTarget filter,
-            AvdDisplayMode displayMode) {
-        this(parent, sdkContext, new TargetBasedFilter(filter), displayMode);
-    }
-
     public SdkTargets getSdkTargets() {
 		return mSdkTargets;
 	}
@@ -431,36 +282,71 @@ public final class AvdSelector {
      * Refresh the display of Android Virtual Devices.
      * Tries to keep the selection.
      * <p/>
-     * This must be called from the UI thread.
+     * This does not need to be called from the UI thread.
      *
      * @param reload if true, the AVD manager will reload the AVD from the disk.
-     * @return false if the reloading failed. This is always true if <var>reload</var> is
-     * <code>false</code>.
+     * @return true as this is now run asynchronously.
      */
     public boolean refresh(boolean reload) {
-        if (!mInternalRefresh) {
-            try {
-                // Note that AvdManagerPage.onDevicesChange() will trigger a
-                // refresh while the AVDs are being reloaded so prevent from
-                // having a recursive call to here.
-                mInternalRefresh = true;
-                if (reload) {
-                    try {
-                        mAvdManager.reloadAvds(NullLogger.getLogger());
-                    } catch (AndroidLocationException e) {
-                        return false;
-                    }
-                }
+    	// Guard against refresh while refresh is in progress
+    	final boolean[] skip = new boolean[]{false};
+    	Display.getDefault().syncExec(new Runnable(){
 
-                AvdAgent selected = getSelected();
-                fillTable(mTable);
-                setSelection(selected);
-                return true;
-            } finally {
-                mInternalRefresh = false;
-            }
-        }
-        return false;
+			@Override
+			public void run() {
+				skip[0] = !managerControls.isRefreshEnabled();
+				if (!skip[0]) {
+					// Disable refresh button
+					managerControls.enableRefresh(false);
+					// Clear the table so the user gets feedback
+				    mTable.removeAll();
+				}
+			}
+    	});
+    	if (skip[0])
+    		return true;
+    	// Some work must now be done in the background as it involves file operations
+    	Job job = new Job("Refresh AVD Manager"){
+
+			@Override
+			protected IStatus run(IProgressMonitor arg0) {
+		        if (!mInternalRefresh) {
+	                // Note that AvdManagerPage.onDevicesChange() will trigger a
+	                // refresh while the AVDs are being reloaded so prevent from
+	                // having a recursive call to here.
+	                mInternalRefresh = true;
+		            try {
+		            	// After a repair operation, the targets and systerm imaages may have changed
+		            	mSdkTargets.reload();
+		                if (reload) {
+		                    try {
+		                        mAvdManager.reloadAvds(mSdkContext.getSdkLog());
+		                    } catch (AndroidLocationException e) { // This is not expected
+		                    	mSdkContext.getSdkLog().error(e, "Error while refreshing AVDs");
+		                        return Status.CANCEL_STATUS;
+		                    }
+		                }
+
+		            	Display.getDefault().syncExec(new Runnable(){
+
+		        			@Override
+		        			public void run() {
+				                AvdAgent selected = getSelected();
+				                fillTable(mTable);
+				                setSelection(selected);
+								managerControls.enableRefresh(true);
+		        			}
+		            	});
+		            } finally {
+		                mInternalRefresh = false;
+		            }
+		        }
+				return Status.OK_STATUS;
+			};
+        };
+        job.setPriority(Job.BUILD);
+        job.schedule();
+        return true;
     }
 
     /**
@@ -526,11 +412,12 @@ public final class AvdSelector {
      * @param target the target to be selected. Use null to deselect everything.
      * @return true if the target could be selected, false otherwise.
      */
-	public void setSelection(AvdInfo avd) {
+	public boolean setSelection(AvdInfo avd) {
 		AvdAgent avdAgent = avdAgentInstance(avd);
        	if (avdAgent != null)
-    		setSelection(avdAgent);
+    		return setSelection(avdAgent);
         // Ignore AVD if there is no system image and Android version not supported
+       	return false;
 	}
 
 	/**
@@ -615,7 +502,7 @@ public final class AvdSelector {
         mIsEnabled = enabled && mAvdManager != null;
 
         mTable.setEnabled(mIsEnabled);
-        mRefreshButton.setEnabled(mIsEnabled);
+        managerControls.enableRefresh(mIsEnabled);
 
         if (mNewButton != null) {
             mNewButton.setEnabled(mIsEnabled);
@@ -627,8 +514,159 @@ public final class AvdSelector {
         enableActionButtons();
     }
 
+    /**
+     * Returns flag set true if control is enabled
+     * @return boolean
+     */
     public boolean isEnabled() {
         return mIsEnabled;
+    }
+
+    /**
+     * Create control content
+     * @param parent Parent composite
+     * @param displayMode AVD disply mode
+     */
+    private void createContent(Composite parent, AvdDisplayMode displayMode) {
+        // Layout has 2 columns
+        Composite group = new Composite(parent, SWT.NONE);
+        GridLayout gl;
+        group.setLayout(gl = new GridLayout(NUM_COL, false /*makeColumnsEqualWidth*/));
+        gl.marginHeight = gl.marginWidth = 0;
+        group.setLayoutData(new GridData(GridData.FILL_BOTH));
+        group.setFont(parent.getFont());
+
+        int style = SWT.FULL_SELECTION | SWT.SINGLE | SWT.BORDER;
+        if (displayMode == AvdDisplayMode.SIMPLE_CHECK) {
+            style |= SWT.CHECK;
+        }
+        mTable = new Table(group, style);
+        mTable.setHeaderVisible(true);
+        mTable.setLinesVisible(false);
+        setTableHeightHint(0);
+
+        Composite buttons = new Composite(group, SWT.NONE);
+        buttons.setLayout(gl = new GridLayout(1, false /*makeColumnsEqualWidth*/));
+        gl.marginHeight = gl.marginWidth = 0;
+        buttons.setLayoutData(new GridData(GridData.FILL_VERTICAL));
+        buttons.setFont(group.getFont());
+
+        if (displayMode == AvdDisplayMode.MANAGER) {
+            mNewButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
+            mNewButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            mNewButton.setText("Create...");
+            mNewButton.setToolTipText("Creates a new AVD.");
+            mNewButton.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent arg0) {
+                    onNew();
+                }
+            });
+        }
+
+        mStartButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
+        mStartButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+        mStartButton.setText("Start...");
+        mStartButton.setToolTipText("Starts the selected AVD.");
+        mStartButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent arg0) {
+                onStart();
+            }
+        });
+
+        @SuppressWarnings("unused")
+        Label spacing = new Label(buttons, SWT.NONE);
+
+        if (displayMode == AvdDisplayMode.MANAGER) {
+            mEditButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
+            mEditButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            mEditButton.setText("Edit...");
+            mEditButton.setToolTipText("Edit an existing AVD.");
+            mEditButton.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent arg0) {
+                    onEdit();
+                }
+            });
+
+            mRepairButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
+            mRepairButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            mRepairButton.setText("Repair...");
+            mRepairButton.setToolTipText("Repairs the selected AVD.");
+            mRepairButton.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent arg0) {
+                    onRepair();
+                }
+            });
+
+            mDeleteButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
+            mDeleteButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            mDeleteButton.setText("Delete...");
+            mDeleteButton.setToolTipText("Deletes the selected AVD.");
+            mDeleteButton.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent arg0) {
+                    onDelete();
+                }
+            });
+        }
+
+        mDetailsButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
+        mDetailsButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+        mDetailsButton.setText("Details...");
+        mDetailsButton.setToolTipText("Displays details of the selected AVD.");
+        mDetailsButton.addSelectionListener(new SelectionAdapter() {
+            @Override
+            public void widgetSelected(SelectionEvent arg0) {
+                onDetails();
+            }
+        });
+
+        Composite padding = new Composite(buttons, SWT.NONE);
+        padding.setLayoutData(new GridData(GridData.FILL_VERTICAL));
+        if (displayMode != AvdDisplayMode.MANAGER) {
+            mManagerButton = new Button(buttons, SWT.PUSH | SWT.FLAT);
+            mManagerButton.setLayoutData(new GridData(GridData.FILL_HORIZONTAL));
+            mManagerButton.setText("Manager...");
+            mManagerButton.setToolTipText("Launches the AVD manager.");
+            mManagerButton.addSelectionListener(new SelectionAdapter() {
+                @Override
+                public void widgetSelected(SelectionEvent e) {
+                    onAvdManager();
+                }
+            });
+        } else {
+             Composite legend = new Composite(group, SWT.NONE);
+            legend.setLayout(gl = new GridLayout(4, false /*makeColumnsEqualWidth*/));
+            gl.marginHeight = gl.marginWidth = 0;
+            legend.setLayoutData(new GridData(GridData.FILL, GridData.BEGINNING, true, false,
+                    NUM_COL, 1));
+            legend.setFont(group.getFont());
+
+            new Label(legend, SWT.NONE).setImage(mBrokenImage);
+            new Label(legend, SWT.NONE).setText("A repairable Android Virtual Device.");
+            new Label(legend, SWT.NONE).setImage(mInvalidImage);
+            new Label(legend, SWT.NONE).setText("An Android Virtual Device that failed to load. Click 'Details' to see the error.");
+        }
+
+        // create the table columns
+        final TableColumn column0 = new TableColumn(mTable, SWT.NONE);
+        column0.setText("AVD Name");
+        final TableColumn column1 = new TableColumn(mTable, SWT.NONE);
+        column1.setText("Target Name");
+        final TableColumn column2 = new TableColumn(mTable, SWT.NONE);
+        column2.setText("Platform");
+        final TableColumn column3 = new TableColumn(mTable, SWT.NONE);
+        column3.setText("API Level");
+        final TableColumn column4 = new TableColumn(mTable, SWT.NONE);
+        column4.setText("CPU/ABI");
+
+        adjustColumnsWidth(mTable, column0, column1, column2, column3, column4);
+        setupSelectionListener(mTable);
+        fillTable(mTable);
+        setEnabled(true);
     }
 
     /**
@@ -783,16 +821,20 @@ public final class AvdSelector {
                     if (mDisplayMode == AvdDisplayMode.MANAGER) {
                         AvdStatus status = avd.getStatus();
 
-                        boolean isOk = status == AvdStatus.OK;
+                        boolean isOk = (status == AvdStatus.OK) && (avdAgent.getTarget() != null);
                         boolean isRepair = isAvdRepairable(status);
+                        if (!isRepair && (avdAgent.getPlatformPath() != null) && (avdAgent.getSystemImagePath() != null))
+                        	isRepair = true;
                         boolean isInvalid = !isOk && !isRepair;
 
                         Image img = getTagImage(avd.getTag(), isOk, isRepair, isInvalid);
-                        item.setImage(0,  img);
+                        item.setImage(0, img);
                     }
                     item.setText(1, avdAgent.getTargetFullName());
                     item.setText(2, avdAgent.getTargetVersionName());
-                    item.setText(3, avd.getAndroidVersion().getApiString());
+                    // AvdInfo may not contain a valid Android version, so we use the Agent value obtained from the system image
+                    AndroidVersion version = avdAgent.getAndroidVersion();
+                    item.setText(3, version != null ? version.toString() : "");
                     item.setText(4, AvdInfo.getPrettyAbiType(avd));
                 }
             }
@@ -811,30 +853,78 @@ public final class AvdSelector {
         }
     }
 
+    /**
+     * Returns an AVD Agent to wrap give AVD Info object
+     * @param avd The AVD Info object
+     * @return AvdAgent object
+     */
     private AvdAgent avdAgentInstance(AvdInfo avd) {
         AvdAgent avdAgent = null;
+        // Extract system image information from AvdInfo data
         SystemImageInfo systemImageInfo = new SystemImageInfo(avd);
-        if (systemImageInfo.hasSystemImage())
-        	avdAgent = new AvdAgent(mSdkTargets.getTargetForSysImage(systemImageInfo.getSystemImage()), avd);
-        else {
-        	IAndroidTarget target = mSdkTargets.getTargetForAndroidVersion(avd.getAndroidVersion());
+        // The system image can be null if not found by AVD Manager
+        if (systemImageInfo.hasSystemImage()) {
+        	// Look up targets to find one with same Android version as this system image
+        	IAndroidTarget target = mSdkTargets.getTargetForSysImage(systemImageInfo.getSystemImage());
         	if (target != null)
-        	    avdAgent = new AvdAgent(target, avd);
-    		// Return null if there is no system image and Android version not supported
+        		// The AVD Agent binds the target to the AVD Info object
+        		avdAgent = new AvdAgent(target, avd);
+        } 
+        if (avdAgent == null) {
+        	// The reason for the system image not found may be fixable.
+        	// The starting point is to derive the platform and and system image paths from the system image location 
+            String imageSysDir = avd.getProperties().get(AvdManager.AVD_INI_IMAGES_1);
+            if (imageSysDir != null) {
+            	// Extract Android platform and and systme image path from directory
+            	imageSysDir = imageSysDir.replace('\\', '/');
+            	Pattern pattern = Pattern.compile("^system-images/([^/]+)/(.*)/$");
+            	Matcher matcher = pattern.matcher(imageSysDir);
+            	if (matcher.matches()){
+            		String platformPath = "platforms;" + matcher.group(1);
+            		String systemImagePath = "system-images;" + matcher.group(1) + ";" + matcher.group(2).replaceAll("/", ";");
+        	        // System image will need to be installed and possibly platform too.
+            		// The AVD will now be shown as repairable
+        	        avdAgent = new AvdAgent(platformPath, systemImagePath, avd);
+            	}
+            }
+            if (avdAgent == null) {
+            	// The AVD is still worthy of repair if the AVD Info Android version is supported
+            	// It looks like this property is derived from the system image, so it is unlikely for the following code will succeed.
+            	// Note the APL level when unknown is set to 1 so any attempt to find a matching target fails
+	        	IAndroidTarget target = mSdkTargets.getTargetForAndroidVersion(avd.getAndroidVersion());
+	        	if (target != null)
+	        	    avdAgent = new AvdAgent(target, avd);
+	    		// Return null if there is no system image and Android version not supported or unknown
+            }
         }
         return avdAgent;
     }
-    
+ 
+    /**
+     * Returns a tag image. The special tags are android-tv" and "android-wear". 
+     * A status image is rendered over the top for a broken AVD.
+     * @param tag
+     * @param isOk
+     * @param isRepair
+     * @param isInvalid
+     * @return
+     */
     @NonNull
     private Image getTagImage(IdDisplay tag,
                               final boolean isOk,
                               final boolean isRepair,
                               final boolean isInvalid) {
-        if (tag == null) {
-            tag = SystemImage.DEFAULT_TAG;
-        }
-
-        String fname = String.format("tag_%s_32.png", tag.getId());
+       String id = SystemImage.DEFAULT_TAG.getId();  
+    	if (tag != null) {
+    		// Some devices have distinctive images
+        	for (String specialTag: DEVICE_IMAGE_TAGS) {
+    		    if (tag.getId().equals(specialTag)) {
+    		    	id = specialTag;
+    		    	break;
+    		    }
+        	}
+    	}
+        String fname = String.format("tag_%s_32.png", id);
         String kname = String.format("%d%d%d_%s", (isOk ? 1 : 0),
                                                   (isRepair ? 1 : 0),
                                                   (isInvalid ? 1 : 0),
@@ -870,7 +960,7 @@ public final class AvdSelector {
     }
 
     /**
-     * Updates the enable state of the Details, Start, Delete and Update buttons.
+     * Updates the enable state of the Details, Start, Delete, Edit and Repair buttons.
      */
     private void enableActionButtons() {
         if (mIsEnabled == false) {
@@ -889,63 +979,96 @@ public final class AvdSelector {
         } else {
             AvdAgent selection = getTableSelection();
             boolean hasSelection = selection != null;
+            boolean isRepairable = false;
+        	if (hasSelection) {
+        		isRepairable = isAvdRepairable(selection.getAvd().getStatus());
+        		if (!isRepairable)
+        			isRepairable = (selection.getTarget() == null) && 
+        			(selection.getPlatformPath() != null) &&
+        			(selection.getSystemImagePath() != null);
+        	}
 
             mDetailsButton.setEnabled(hasSelection);
             mStartButton.setEnabled(hasSelection &&
-                    selection.getAvd().getStatus() == AvdStatus.OK);
+                    (selection.getAvd().getStatus() == AvdStatus.OK) &&
+                    (selection.getTarget() != null));
 
             if (mEditButton != null) {
-                mEditButton.setEnabled(hasSelection);
+                mEditButton.setEnabled(hasSelection && !isRepairable);
             }
             if (mDeleteButton != null) {
                 mDeleteButton.setEnabled(hasSelection);
             }
             if (mRepairButton != null) {
-                mRepairButton.setEnabled(hasSelection && isAvdRepairable(selection.getAvd().getStatus()));
-            }
+                mRepairButton.setEnabled(isRepairable);
+           }
         }
     }
 
+    /**
+     * Handle Create button hit
+     */
     private void onNew() {
-        AvdCreationDialog dlg = new AvdCreationDialog(mTable.getShell(),
+        AvdCreationDialog avdCreationDialog = new AvdCreationDialog(mTable.getShell(),
                 mSdkContext,
                 mSdkTargets,
                 null);
 
-        if (dlg.open() == Window.OK) {
+        if (avdCreationDialog.open() == Window.OK) {
             refresh(false); //reload
         }
     }
 
+    /**
+     * Handle Edit button hit
+     */
     private void onEdit() {
         AvdAgent avdAgent = getTableSelection();
-        GridDialog dlg = null;
+        if (avdAgent == null)
+        	return; // This is not expected
+        AvdCreationDialog avdCreationDialog = null;
         if (!avdAgent.getAvd().getDeviceName().isEmpty()) {
-            dlg = new AvdCreationDialog(mTable.getShell(),
+        	avdCreationDialog = new AvdCreationDialog(mTable.getShell(),
             		mSdkContext,
             		mSdkTargets,
             		avdAgent);
         } else {
-        	// create a dialog with ok button and a warning icon
+        	// Legacy configurations no longer supported - too hard to do
+        	// Create a dialog with ok button and a warning icon
         	MessageBox dialog =
         	    new MessageBox(mTable.getShell(), SWT.ICON_WARNING| SWT.OK);
         	dialog.setText("Legacy device not supported");
         	dialog.setMessage(avdAgent.getAvd().getName() + " has is assigned a legacy device no longer supported by the Android SDK");
-         	// open dialog and await user selection
+         	// Oopen dialog and await user selection
         	dialog.open();       
         }
-        if ((dlg != null) && (dlg.open() == Window.OK)) {
+        if ((avdCreationDialog != null) && (avdCreationDialog.open() == Window.OK)) {
+        	// Delete old AVD if repair results in duplication
+        	AvdInfo originalAvdInfo = avdAgent.getAvd();
+        	avdAgent = avdAgentInstance(avdCreationDialog.getCreatedAvd());
+        	if ((originalAvdInfo.getStatus() != AvdStatus.OK) && 
+        		!originalAvdInfo.getName().equals(avdAgent.getAvd().getName()))
+        		mAvdManager.deleteAvd(originalAvdInfo, mSdkContext.getSdkLog());
+            int selIndex = mTable.getSelectionIndex();
+            if (selIndex >= 0)
+                 mTable.getItem(selIndex).setData(avdAgent);
             refresh(false); //reload
         }
     }
 
+    /**
+     * Handle Details button hit
+     */
     private void onDetails() {
         AvdAgent avdAgent = getTableSelection();
 
-        AvdDetailsDialog dlg = new AvdDetailsDialog(mTable.getShell(), avdAgent);
+        AvdDetailsDialog dlg = new AvdDetailsDialog(mTable.getShell(), mImageFactory, avdAgent);
         dlg.open();
     }
 
+    /**
+     * Handle Delete button hit. Applies only to User type AVDs.
+     */
     private void onDelete() {
         final AvdAgent avdAgent = getTableSelection();
 
@@ -986,7 +1109,7 @@ public final class AvdSelector {
             return;
         }
 
-        ILogger log = null;
+        ILogger log = mSdkContext.getSdkLog();
 		// log for this action.
         if (log  == null || log instanceof MessageBoxLog) {
             // If the current logger is a message box, we use our own (to make sure
@@ -1011,9 +1134,7 @@ public final class AvdSelector {
     }
 
     /**
-     * Repairs the selected AVD.
-     * <p/>
-     * For now this only supports fixing the wrong value in image.sysdir.*
+     * Handle Repair button hit
      */
     private void onRepair() {
         final AvdAgent avdAgent = getTableSelection();
@@ -1021,7 +1142,7 @@ public final class AvdSelector {
         // get the current Display
         final Display display = mTable.getDisplay();
 
-        ILogger log = null;
+        ILogger log = mSdkContext.getSdkLog();
         if (log == null || log instanceof MessageBoxLog) {
             // If the current logger is a message box, we use our own (to make sure
             // to display errors right away and customize the title).
@@ -1031,15 +1152,8 @@ public final class AvdSelector {
                 false /*logErrorsOnly*/);
         }
 
-        if (avdAgent.getAvd().getStatus() == AvdStatus.ERROR_IMAGE_DIR) {
-            // delete the AVD
-            try {
-                mAvdManager.updateAvd(avdAgent.getAvd(), avdAgent.getAvd().getProperties());
-            } catch (IOException e) {
-               log.error(e, null);
-            }
-            refresh(false /*reload*/);
-        } else if (avdAgent.getAvd().getStatus() == AvdStatus.ERROR_DEVICE_CHANGED) {
+        if (avdAgent.getAvd().getStatus() == AvdStatus.ERROR_DEVICE_CHANGED) {
+        	// Device configuration needs an update. The AVD Manager handles this.
             try {
                 mAvdManager.updateDeviceChanged(avdAgent.getAvd(), log);
             } catch (IOException e) {
@@ -1047,10 +1161,56 @@ public final class AvdSelector {
             }
             refresh(false /*reload*/);
         } else if (avdAgent.getAvd().getStatus() == AvdStatus.ERROR_DEVICE_MISSING) {
+        	// The AVD configuration references a missing device so let the user choose another device
             onEdit();
+        } else if (avdAgent.getTarget() == null) {
+        	// System image and/or platform needs to be installed
+        	String platformPath = avdAgent.getPlatformPath();
+        	String systemImagePath = avdAgent.getSystemImagePath();
+	        if (mSdkContext.getLocalPackages().get(platformPath) == null) {
+	        	// Platform not found in local packages, so will have to be deployed
+		        AdtUpdateDialog updater = new AdtUpdateDialog(
+		                mShell,
+		                mSdkContext);
+		        Pair<Boolean, File> platformResult = updater.installPackage(platformPath);
+		        if (!platformResult.getFirst()) {
+	                log.error(null, "Repair failed: Platform install error");
+		        	return;
+		        }
+	        }
+	        SystemImageInfo systemImageInfo = new SystemImageInfo(avdAgent.getAvd());
+	        if (!systemImageInfo.hasSystemImage()) {
+		        AdtUpdateDialog updater = new AdtUpdateDialog(
+		                mShell,
+		                mSdkContext);
+		        Pair<Boolean, File> systemImageResult = updater.installPackage(systemImagePath);
+		        if (!systemImageResult.getFirst()) {
+	                log.error(null, "Repair failed: System image install error");
+		        	return;
+		        }
+	        }
+			LocalPackage localPlatformPackage = mSdkContext.getLocalPackages().get(platformPath);
+			if (localPlatformPackage == null) { // This is not expected
+                log.error(null, "Repair failed: Platform package not found");
+	        	return;
+			}
+			AndroidVersion version = ((PlatformDetailsType)localPlatformPackage.getTypeDetails()).getAndroidVersion();
+        	IAndroidTarget target = mSdkTargets.getTargetForAndroidVersion(version);
+        	if (target == null) {
+                log.error(null, "Repair failed: Android version not found");
+	        	return;
+        	}
+            try {
+                mAvdManager.updateAvd(avdAgent.getAvd(), avdAgent.getAvd().getProperties());
+            } catch (IOException e) {
+               log.error(e, null);
+            }
         }
     }
 
+    /**
+     * Handle AVD manager button hit
+     */
     private void onAvdManager() {
 
         // get the current Display
@@ -1081,6 +1241,9 @@ public final class AvdSelector {
         }
     }
 
+    /**
+     * Handle Start button hit 
+     */
     private void onStart() {
     	AvdAgent avdAgent = getTableSelection();
 
@@ -1136,111 +1299,20 @@ public final class AvdSelector {
             final String[] command = list.toArray(new String[list.size()]);
 
             // launch the emulator
-            final ProgressTask progress = new ProgressTask(mTable.getShell(),
-                                                    STARTING_EMULATOR);
-            progress.start(new ITask() {
-                volatile ITaskMonitor mMonitor = null;
-
-                @Override
-                public void run(final ITaskMonitor monitor) {
-                    mMonitor = monitor;
-                    try {
-                        monitor.setDescription(
-                                "Starting emulator for AVD '%1$s'",
-                                avdName);
-                        monitor.log("Starting emulator for AVD '%1$s'", avdName);
-
-                        // we'll wait 100ms*100 = 10s. The emulator sometimes seem to
-                        // start mostly OK just to crash a few seconds later. 10 seconds
-                        // seems a good wait for that case.
-                        int n = 100;
-                        monitor.setProgressMax(n);
-
-                        Process process = Runtime.getRuntime().exec(command);
-                        GrabProcessOutput.grabProcessOutput(
-                                process,
-                                Wait.ASYNC,
-                                new IProcessOutput() {
-                                    @Override
-                                    public void out(@Nullable String line) {
-                                        filterStdOut(line);
-                                    }
-
-                                    @Override
-                                    public void err(@Nullable String line) {
-                                        filterStdErr(line);
-                                    }
-                                });
-
-                        // This small wait prevents the dialog from closing too fast:
-                        // When it works, the emulator returns immediately, even if
-                        // no UI is shown yet. And when it fails (because the AVD is
-                        // locked/running) this allows us to have time to capture the
-                        // error and display it.
-                        for (int i = 0; i < n; i++) {
-                            try {
-                                Thread.sleep(100);
-                                monitor.incProgress(1);
-                            } catch (InterruptedException e) {
-                                // ignore
-                            }
-                        }
-                    } catch (Exception e) {
-                        monitor.logError("Failed to start emulator: %1$s",
-                                e.getMessage());
-                    } finally {
-                        mMonitor = null;
-                    }
-                }
-
-                private void filterStdOut(String line) {
-                    ITaskMonitor m = mMonitor;
-                    if (line == null || m == null) {
-                        return;
-                    }
-
-                    // Skip some non-useful messages.
-                    if (line.indexOf("NSQuickDrawView") != -1) { //$NON-NLS-1$
-                        // Discard the MacOS warning:
-                        // "This application, or a library it uses, is using NSQuickDrawView,
-                        // which has been deprecated. Apps should cease use of QuickDraw and move
-                        // to Quartz."
-                        return;
-                    }
-
-                    if (line.toLowerCase().indexOf("error") != -1 ||                //$NON-NLS-1$
-                            line.indexOf("qemu: fatal") != -1) {                    //$NON-NLS-1$
-                        // Sometimes the emulator seems to output errors on stdout. Catch these.
-                        m.logError("%1$s", line);                                   //$NON-NLS-1$
-                        return;
-                    }
-
-                    m.log("%1$s", line);                                            //$NON-NLS-1$
-                }
-
-                private void filterStdErr(String line) {
-                    ITaskMonitor m = mMonitor;
-                    if (line == null || m == null) {
-                        return;
-                    }
-
-                    if (line.indexOf("emulator: device") != -1 ||                   //$NON-NLS-1$
-                            line.indexOf("HAX is working") != -1) {                 //$NON-NLS-1$
-                        // These are not errors. Output them as regular stdout messages.
-                        m.log("%1$s", line);                                        //$NON-NLS-1$
-                        return;
-                    }
-
-                    m.logError("%1$s", line);                                       //$NON-NLS-1$
-                }
-            });
+            final ProgressTask progress = new ProgressTask(mTable.getShell(), STARTING_EMULATOR);
+            EmulatorTask emulatorTask = new EmulatorTask(avdName, command);
+            progress.start(emulatorTask, null);
         }
     }
 
+    /**
+     * Returns flag set true if AVD is repairable base on it's status
+     * @param avdStatus The status
+     * @return boolean
+     */
     private boolean isAvdRepairable(AvdStatus avdStatus) {
-        return avdStatus == AvdStatus.ERROR_IMAGE_DIR
-                || avdStatus == AvdStatus.ERROR_DEVICE_CHANGED
-                || avdStatus == AvdStatus.ERROR_DEVICE_MISSING;
+        return avdStatus == AvdStatus.ERROR_DEVICE_CHANGED ||
+               avdStatus == AvdStatus.ERROR_DEVICE_MISSING;
     }
 
 }

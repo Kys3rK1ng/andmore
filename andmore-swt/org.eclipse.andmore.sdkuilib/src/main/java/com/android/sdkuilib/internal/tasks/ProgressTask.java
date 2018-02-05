@@ -25,7 +25,9 @@ import java.io.StringWriter;
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.IJobChangeEvent;
 import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.core.runtime.jobs.JobChangeAdapter;
 import org.eclipse.swt.widgets.Shell;
 
 
@@ -55,11 +57,20 @@ public final class ProgressTask extends TaskMonitorImpl {
      * The {@link ProgressTask} must not be reused after this call.
      * Returns when dialog is closed
      * @param task The task to be executed
+     * @param onTerminateTask Task to run on termination
      */
-    public void start(ITask task) {
+    public void start(ITask task, Runnable onTerminateTask) {
         assert mDialog != null;
         Job job = createJob(mTitle, task);
         job.setPriority(Job.INTERACTIVE);
+        if (onTerminateTask != null) {
+        	job.addJobChangeListener(new JobChangeAdapter(){
+	            @Override
+	            public void done(IJobChangeEvent event) {
+	            	onTerminateTask.run();
+	            }
+	        });
+        }
         mDialog.open(job);
     }
 

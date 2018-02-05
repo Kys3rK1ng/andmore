@@ -51,7 +51,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#cancel()
 	 */
 	@Override
-	public void cancel() {
+	public synchronized void  cancel() {
 		if (cancellable)
 			// TODO - Consider informing user request denied or disable stop button when not cancellable
 			isCancelled = true;
@@ -61,7 +61,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#getFraction()
 	 */
 	@Override
-	public double getFraction() {
+	public synchronized double getFraction() {
 		return MAX_COUNT / monitor.getProgress();
 	}
 
@@ -69,7 +69,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#isCanceled()
 	 */
 	@Override
-	public boolean isCanceled() {
+	public synchronized boolean isCanceled() {
 		return isCancelled || monitor.isCancelRequested();
 	}
 
@@ -77,7 +77,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#isCancellable()
 	 */
 	@Override
-	public boolean isCancellable() {
+	public synchronized boolean isCancellable() {
 		return cancellable;
 	}
 
@@ -85,7 +85,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#isIndeterminate()
 	 */
 	@Override
-	public boolean isIndeterminate() {
+	public synchronized boolean isIndeterminate() {
 		return indeterminate;
 	}
 
@@ -93,7 +93,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#logError(java.lang.String)
 	 */
 	@Override
-	public void logError(String message) {
+	public synchronized void logError(String message) {
 		monitor.logError(message);
 	}
 
@@ -101,7 +101,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#logError(java.lang.String, java.lang.Throwable)
 	 */
 	@Override
-	public void logError(String message, Throwable throwable) {
+	public synchronized void logError(String message, Throwable throwable) {
 		monitor.error(throwable, message);
 	}
 
@@ -109,7 +109,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#logInfo(java.lang.String)
 	 */
 	@Override
-	public void logInfo(String message) {
+	public synchronized void logInfo(String message) {
 		monitor.info(message);
 	}
 
@@ -117,7 +117,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#logWarning(java.lang.String)
 	 */
 	@Override
-	public void logWarning(String message) {
+	public synchronized void logWarning(String message) {
 		monitor.warning(message);
 	}
 
@@ -125,7 +125,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#logWarning(java.lang.String, java.lang.Throwable)
 	 */
 	@Override
-	public void logWarning(String message, Throwable throwable) {
+	public synchronized void logWarning(String message, Throwable throwable) {
 		StringWriter builder = new StringWriter();
 		builder.append(message);
 		if (throwable != null) {
@@ -140,7 +140,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#setCancellable(boolean)
 	 */
 	@Override
-	public void setCancellable(boolean cancellable) {
+	public synchronized void setCancellable(boolean cancellable) {
 		this.cancellable = cancellable;
 	}
 
@@ -148,7 +148,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#setFraction(double)
 	 */
 	@Override
-	public void setFraction(double fraction) {
+	public synchronized void setFraction(double fraction) {
 		int progress = fraction == 1.0 ? MAX_COUNT : (int)((double)MAX_COUNT * fraction);
 		monitor.incProgress(progress - monitor.getProgress());
 	}
@@ -157,7 +157,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#setIndeterminate(boolean)
 	 */
 	@Override
-	public void setIndeterminate(boolean indeterminate) {
+	public synchronized void setIndeterminate(boolean indeterminate) {
 		this.indeterminate = indeterminate;
 	}
 
@@ -165,7 +165,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#setSecondaryText(java.lang.String)
 	 */
 	@Override
-	public void setSecondaryText(String text) {
+	public synchronized void setSecondaryText(String text) {
 		// TODO - implement secondary text
 		monitor.logVerbose(text);
 	}
@@ -174,7 +174,7 @@ public class SdkProgressIndicator implements ProgressIndicator {
 	 * @see com.android.repository.api.ProgressIndicator#setText(java.lang.String)
 	 */
 	@Override
-	public void setText(String text) {
+	public synchronized void setText(String text) {
 		monitor.setDescription(text);
 	}
 
