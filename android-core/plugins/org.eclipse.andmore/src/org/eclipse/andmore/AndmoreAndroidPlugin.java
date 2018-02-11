@@ -453,15 +453,17 @@ public class AndmoreAndroidPlugin extends AbstractUIPlugin implements ILogger {
     }
 
     /**
-     * Returns the SDK folder.
+     * Returns the SDK folder terminated with path separator.
      * Guaranteed to be terminated by a platform-specific path separator.
      */
     public static synchronized String getOsSdkFolder() {
         if (sPlugin == null) {
             return null;
         }
-
-        return AdtPrefs.getPrefs().getOsSdkFolder();
+        String sdkPath = AdtPrefs.getPrefs().getOsSdkFolder();
+        if (sdkPath.endsWith(File.separator))
+        	return sdkPath;
+        return sdkPath + File.separator;
     }
 
     public static String getOsSdkToolsFolder() {

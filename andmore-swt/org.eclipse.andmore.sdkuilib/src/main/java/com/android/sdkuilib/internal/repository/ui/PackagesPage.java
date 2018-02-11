@@ -384,7 +384,7 @@ public final class PackagesPage extends Composite {
             }
         });
 		mButtonInstall = new Button(mGroupOptions, SWT.NONE);
-        mButtonInstall.setText("");  // filled in updateButtonsState()
+        mButtonInstall.setText("Install package");  // filled in updateButtonsState()
         mButtonInstall.setToolTipText("Install one or more packages");
         GridDataBuilder.create(mButtonInstall).vCenter().wHint(150).hFill().hGrab().hRight();
         mButtonInstall.addSelectionListener(new SelectionAdapter() 
@@ -459,7 +459,7 @@ public final class PackagesPage extends Composite {
 				}
 			}});
         mButtonDelete = new Button(mGroupOptions, SWT.NONE);
-        mButtonDelete.setText("");  // filled in updateButtonsState()
+        mButtonDelete.setText("Delete package");  // filled in updateButtonsState()
         mButtonDelete.setToolTipText("Delete one ore more installed packages");
         GridDataBuilder.create(mButtonDelete).vCenter().wHint(150).hFill().hGrab().hRight();
         mButtonDelete.addSelectionListener(new SelectionAdapter() 
