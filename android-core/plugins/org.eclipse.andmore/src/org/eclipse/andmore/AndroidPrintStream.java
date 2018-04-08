@@ -16,8 +16,6 @@
 
 package org.eclipse.andmore;
 
-import org.eclipse.core.resources.IProject;
-
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.Calendar;
@@ -30,23 +28,36 @@ import java.util.Calendar;
  * Only {@link #println()} is supported.
  */
 public class AndroidPrintStream extends PrintStream {
-    private IProject mProject;
+    private String mProject;
     private String mPrefix;
 
     /**
      * Default constructor with project and output stream.
      * The project is used to get the project name for the output tag.
      *
-     * @param project The Project
+     * @param project The Project name
      * @param prefix A prefix to be printed before the actual message. Can be null
      * @param stream The Stream
      */
-    public AndroidPrintStream(IProject project, String prefix, OutputStream stream) {
+    public AndroidPrintStream(String project, String prefix, OutputStream stream) {
         super(stream);
         mProject = project;
     }
 
     /**
+     * Default constructor with project and output print stream.
+     * The project is used to get the project name for the output tag.
+     *
+     * @param project The Project name
+     * @param prefix A prefix to be printed before the actual message. Can be null
+     * @param stream The Stream
+     */
+   public AndroidPrintStream(String project, String prefix, PrintStream stream) {
+        super(stream);
+        mProject = project;
+	}
+
+	/**
      * Updates the value of the prefix.
      * @param prefix
      */
@@ -57,7 +68,7 @@ public class AndroidPrintStream extends PrintStream {
     @Override
     public void println(String message) {
         // write the date/project tag first.
-        String tag = getMessageTag(mProject != null ? mProject.getName() : null);
+        String tag = getMessageTag(mProject != null ? mProject : null);
 
         print(tag);
         print(" "); //$NON-NLS-1$

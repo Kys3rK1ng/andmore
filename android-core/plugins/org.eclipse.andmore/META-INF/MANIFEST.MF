@@ -16,9 +16,9 @@ Bundle-ClassPath: .,
  libs/manifest-merger-25.3.3.jar,
  libs/builder-2.3.3.jar,
  libs/uast-162.2228.14.jar,
- libs/asm-5.0.4.jar,
- libs/asm-tree-5.0.4.jar,
- libs/asm-analysis-5.0.4.jar
+ libs/asm-6.1.jar,
+ libs/asm-tree-6.1.jar,
+ libs/asm-analysis-6.1.jar
 Bundle-Activator: org.eclipse.andmore.AndmoreAndroidPlugin
 Bundle-Vendor: Eclipse Andmore
 Require-Bundle: org.eclipse.andmore.swt,
@@ -134,7 +134,7 @@ Bundle-RequiredExecutionEnvironment: JavaSE-1.8
 Import-Package: com.android.tools.lint.detector.api,
  com.ibm.icu.text,
  junit.framework,
- org.eclipse.core.variables
- 
+ org.eclipse.core.variables,
+ org.junit;version="4.12.0"
 
 

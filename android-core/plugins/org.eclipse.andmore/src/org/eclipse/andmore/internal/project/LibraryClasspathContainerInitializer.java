@@ -205,7 +205,7 @@ public class LibraryClasspathContainerInitializer extends BaseClasspathContainer
         // and process the jar files list, but first sanitize it to remove dups.
         JarListSanitizer sanitizer = new JarListSanitizer(
                 iProject.getFolder(SdkConstants.FD_OUTPUT).getLocation().toFile(),
-                new AndroidPrintStream(iProject, null /*prefix*/,
+                new AndroidPrintStream(iProject.getName(), null /*prefix*/,
                         AndmoreAndroidPlugin.getOutStream()));
 
         String errorMessage = null;

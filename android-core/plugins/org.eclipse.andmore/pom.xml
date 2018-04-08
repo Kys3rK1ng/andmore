@@ -13,21 +13,24 @@
 		<artifactId>andmore-core-parent</artifactId>
 		<version>0.5.2-SNAPSHOT</version>
 	</parent>
+	<properties>
+		<os-jvm-flags>-Xms256m -Xmx1024m</os-jvm-flags>
+	</properties>
     <dependencies>
 	      <dependency>
             <groupId>org.ow2.asm</groupId>
             <artifactId>asm</artifactId>
-		    <version>5.0.4</version>
+		    <version>6.1</version>
 	      </dependency>
 	      <dependency>
             <groupId>org.ow2.asm</groupId>
             <artifactId>asm-tree</artifactId>
-		    <version>5.0.4</version>
+		    <version>6.1</version>
 	      </dependency>
 	      <dependency>
             <artifactId>asm-analysis</artifactId>
             <groupId>org.ow2.asm</groupId>
-            <version>5.0.4</version>
+            <version>6.1</version>
 	      </dependency>
 	      <dependency>
 			<groupId>com.android.tools.build</groupId>
@@ -156,6 +159,7 @@
 	      </dependency>
     </dependencies>
 	<build>
+        <sourceDirectory>${basedir}/src</sourceDirectory>
 		<plugins>
 			<plugin>
 				<groupId>org.eclipse.tycho</groupId>
@@ -224,17 +228,17 @@
 			          <artifactItem>
                         <groupId>org.ow2.asm</groupId>
                         <artifactId>asm</artifactId>
-        			    <version>5.0.4</version>
+        			    <version>6.1</version>
 			          </artifactItem>
 			          <artifactItem>
                         <groupId>org.ow2.asm</groupId>
                         <artifactId>asm-tree</artifactId>
-        			    <version>5.0.4</version>
+        			    <version>6.1</version>
 			          </artifactItem>
 			          <artifactItem>
                         <groupId>org.ow2.asm</groupId>
                         <artifactId>asm-analysis</artifactId>
-        			    <version>5.0.4</version>
+        			    <version>6.1</version>
 			          </artifactItem>
 			        </artifactItems>
                     <outputDirectory>${project.basedir}/libs</outputDirectory>
@@ -246,6 +250,46 @@
 	           </execution>
 	         </executions>
 	       </plugin>
+		   <plugin>
+				<groupId>org.eclipse.tycho</groupId>
+				<artifactId>tycho-surefire-plugin</artifactId>
+				<version>${tycho-version}</version>
+				<configuration>
+					<skipTests>false</skipTests>
+					<testFailureIgnore>true</testFailureIgnore>
+					<useUIHarness>true</useUIHarness>
+					<appArgLine>-debug -console</appArgLine>
+					<argLine>${os-jvm-flags} ${tycho.testArgLine}</argLine>
+				</configuration>
+	       </plugin>
 		</plugins>
 	</build>
+	<profiles>
+		<profile>
+			<id>macosx-jvm-flags</id>
+			<activation>
+				<os>
+					<family>mac</family>
+				</os>
+			</activation>
+			<properties>
+				<os-jvm-flags>-Xms256m -Xmx512m -XstartOnFirstThread</os-jvm-flags>
+			</properties>
+		</profile>
+		<profile>
+			<id>skipTests</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.eclipse.tycho</groupId>
+						<artifactId>tycho-surefire-plugin</artifactId>
+						<version>${tycho-version}</version>
+						<configuration>
+							<skipTests>true</skipTests>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 </project>

@@ -21,10 +21,14 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -42,6 +46,7 @@ import org.eclipse.andmore.internal.build.BuildHelper.ResourceMarker;
 import org.eclipse.andmore.internal.build.DexException;
 import org.eclipse.andmore.internal.build.Messages;
 import org.eclipse.andmore.internal.build.NativeLibInJarException;
+import org.eclipse.andmore.internal.build.ToolChain;
 import org.eclipse.andmore.internal.lint.LintDeltaProcessor;
 import org.eclipse.andmore.internal.preferences.AdtPrefs;
 import org.eclipse.andmore.internal.preferences.AdtPrefs.BuildVerbosity;
@@ -348,9 +353,9 @@ public class PostCompilerBuilder extends BaseBuilder {
             // Get the output stream. Since the builder is created for the life of the
             // project, they can be kept around.
             if (mOutStream == null) {
-                mOutStream = new AndroidPrintStream(project, null /*prefix*/,
+                mOutStream = new AndroidPrintStream(project.getName(), null /*prefix*/,
                         AndmoreAndroidPlugin.getOutStream());
-                mErrStream = new AndroidPrintStream(project, null /*prefix*/,
+                mErrStream = new AndroidPrintStream(project.getName(), null /*prefix*/,
                         AndmoreAndroidPlugin.getOutStream());
             }
 
@@ -375,8 +380,6 @@ public class PostCompilerBuilder extends BaseBuilder {
                         projectState,
                         mBuildToolInfo,
                         mOutStream, mErrStream,
-                        false /*jumbo mode doesn't matter here*/,
-                        false /*dex merger doesn't matter here*/,
                         true /*debugMode*/,
                         AdtPrefs.getPrefs().getBuildVerbosity() == BuildVerbosity.VERBOSE,
                         mResourceMarker);
@@ -480,20 +483,10 @@ public class PostCompilerBuilder extends BaseBuilder {
             // we need to test all three, as we may need to make the final package
             // but not the intermediary ones.
             if (mPackageResources || mConvertToDex || mBuildFinalPackage) {
-                String forceJumboStr = projectState.getProperty(
-                        AndmoreAndroidConstants.DEX_OPTIONS_FORCEJUMBO);
-                Boolean jumbo = Boolean.valueOf(forceJumboStr);
-
-                String dexMergerStr = projectState.getProperty(
-                        AndmoreAndroidConstants.DEX_OPTIONS_DISABLE_MERGER);
-                Boolean dexMerger = Boolean.valueOf(dexMergerStr);
-
                 BuildHelper helper = new BuildHelper(
                         projectState,
                         mBuildToolInfo,
                         mOutStream, mErrStream,
-                        jumbo.booleanValue(),
-                        dexMerger.booleanValue(),
                         true /*debugMode*/,
                         AdtPrefs.getPrefs().getBuildVerbosity() == BuildVerbosity.VERBOSE,
                         mResourceMarker);
@@ -588,17 +581,31 @@ public class PostCompilerBuilder extends BaseBuilder {
 
                 // then we check if we need to package the .class into classes.dex
                 if (mConvertToDex) {
+                    Set<String> options = null;
+                    String dexMergerStr = projectState.getProperty(AndmoreAndroidConstants.DEX_OPTIONS_DISABLE_MERGER);
+                    if (Boolean.parseBoolean(dexMergerStr)) 
+                    	options = Collections.singleton(ToolChain.DISABLE_DEX_MERGER);
+                    else
+                    	options = Collections.emptySet();
+                    ToolChain toolChain = new ToolChain(javaProject, projectState, false, options);
+
                     if (DEBUG_LOG) {
                         AndmoreAndroidPlugin.log(IStatus.INFO, "%s running dex!", project.getName());
                     }
                     try {
                         Collection<String> dxInputPaths = helper.getCompiledCodePaths();
 
-                        helper.executeDx(javaProject, dxInputPaths, classesDexPath);
+                        toolChain.executeDx(dxInputPaths, classesDexPath);
                     } catch (DexException e) {
                         String message = e.getMessage();
 
                         AndmoreAndroidPlugin.printErrorToConsole(project, message);
+                        if (e.getCause() != null) {
+                    		StringWriter builder = new StringWriter();
+                            PrintWriter writer = new PrintWriter(builder);
+                            e.getCause().printStackTrace(writer);
+                            AndmoreAndroidPlugin.printErrorToConsole(project, builder.toString());
+                        }
                         BaseProjectHelper.markResource(project, AndmoreAndroidConstants.MARKER_PACKAGING,
                                 message, IMarker.SEVERITY_ERROR);
 

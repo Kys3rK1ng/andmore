@@ -34,6 +34,7 @@ import org.eclipse.andmore.internal.build.DexException;
 import org.eclipse.andmore.internal.build.NativeLibInJarException;
 import org.eclipse.andmore.internal.build.ProguardExecException;
 import org.eclipse.andmore.internal.build.ProguardResultException;
+import org.eclipse.andmore.internal.build.ToolChain;
 import org.eclipse.andmore.internal.preferences.AdtPrefs;
 import org.eclipse.andmore.internal.sdk.ProjectState;
 import org.eclipse.andmore.internal.sdk.Sdk;
@@ -61,12 +62,15 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
@@ -125,22 +129,12 @@ public final class ExportHelper {
             });
 
             ProjectState projectState = Sdk.getProjectState(project);
-
-            // get the jumbo mode option
-            String forceJumboStr = projectState.getProperty(AndmoreAndroidConstants.DEX_OPTIONS_FORCEJUMBO);
-            Boolean jumbo = Boolean.valueOf(forceJumboStr);
-
-            String dexMergerStr = projectState.getProperty(AndmoreAndroidConstants.DEX_OPTIONS_DISABLE_MERGER);
-            Boolean dexMerger = Boolean.valueOf(dexMergerStr);
-
             BuildToolInfo buildToolInfo = getBuildTools(projectState);
 
             BuildHelper helper = new BuildHelper(
                     projectState,
                     buildToolInfo,
                     fakeStream, fakeStream,
-                    jumbo.booleanValue(),
-                    dexMerger.booleanValue(),
                     debugMode, false /*verbose*/,
                     null /*resourceMarker*/);
 
@@ -268,10 +262,15 @@ public final class ExportHelper {
                 // jar file(s)
                 dxInput = helper.getCompiledCodePaths();
             }
-
+            Set<String> options = null;
+            String dexMergerStr = projectState.getProperty(AndmoreAndroidConstants.DEX_OPTIONS_DISABLE_MERGER);
+            if (Boolean.parseBoolean(dexMergerStr)) 
+            	options = Collections.singleton(ToolChain.DISABLE_DEX_MERGER);
+            else
+            	options = Collections.emptySet();
             IJavaProject javaProject = JavaCore.create(project);
-
-            helper.executeDx(javaProject, dxInput, dexFile.getAbsolutePath());
+            ToolChain toolChain = new ToolChain(javaProject, projectState, false, options);
+            toolChain.executeDx(dxInput, dexFile.getAbsolutePath());
 
             // Step 3. Gather dex files
             List<File> dexFiles = helper.listDexFiles(javaProject);
@@ -317,6 +316,13 @@ public final class ExportHelper {
             throw new CoreException(new Status(IStatus.ERROR, AndmoreAndroidPlugin.PLUGIN_ID,
                     e.getMessage(), e));
         } catch (DexException e) {
+            if (e.getCause() != null) {
+        		StringWriter builder = new StringWriter();
+        		builder.append(e.getMessage()).append('\n');
+                PrintWriter writer = new PrintWriter(builder);
+                e.getCause().printStackTrace(writer);
+                AndmoreAndroidPlugin.printErrorToConsole(project, builder.toString());
+            }
             throw new CoreException(new Status(IStatus.ERROR, AndmoreAndroidPlugin.PLUGIN_ID,
                     e.getMessage(), e));
         } catch (ApkCreationException e) {

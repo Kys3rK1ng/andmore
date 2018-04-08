@@ -15,8 +15,8 @@
 	<classpathentry exported="true" kind="lib" path="libs/manifest-merger-25.3.3.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/builder-2.3.3.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/uast-162.2228.14.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/asm-5.0.4.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/asm-tree-5.0.4.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/asm-analysis-5.0.4.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/asm-6.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/asm-tree-6.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/asm-analysis-6.1.jar"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>
