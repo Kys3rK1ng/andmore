@@ -20,6 +20,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
@@ -124,11 +126,11 @@ import com.google.common.io.Closeables;
 
 	    @Nullable
 	    @Override
-	    public File downloadFully(@NonNull URL url, @NonNull ProgressIndicator indicator)
+	    public Path downloadFully(@NonNull URL url, @NonNull ProgressIndicator indicator)
 	            throws IOException {
 	        File target = File.createTempFile("FileDownloader", null);
 	        downloadFully(url, target, null, indicator);
-	        return target;
+	        return Paths.get(target.toURI());
 	    }
 
 	    /**

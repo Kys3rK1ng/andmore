@@ -53,7 +53,7 @@ import com.android.annotations.VisibleForTesting;
 import com.android.ide.common.resources.ResourceFile;
 import com.android.ide.common.resources.ResourceFolder;
 import com.android.ide.common.resources.ResourceRepository;
-import com.android.ide.common.resources.ResourceUrl;
+import com.android.resources.ResourceUrl;
 import com.android.ide.common.resources.configuration.FolderConfiguration;
 import com.android.io.FileWrapper;
 import com.android.io.IAbstractFile;

@@ -23,7 +23,7 @@ import com.android.resources.UiMode;
 import com.android.sdklib.IAndroidTarget;
 import com.android.sdklib.devices.Device;
 import com.android.sdklib.devices.State;
-import com.google.common.base.Objects;
+import com.google.common.base.MoreObjects;
 
 /**
  * An {@linkplain NestedConfiguration} is a {@link Configuration} which inherits
@@ -493,7 +493,7 @@ public class NestedConfiguration extends Configuration {
 
     @Override
     public String toString() {
-        return Objects.toStringHelper(this.getClass())
+        return MoreObjects.toStringHelper(this.getClass())
                 .add("parent", mParent.getDisplayName())          //$NON-NLS-1$
                 .add("display", getDisplayName())                 //$NON-NLS-1$
                 .add("overrideLocale", isOverridingLocale())           //$NON-NLS-1$

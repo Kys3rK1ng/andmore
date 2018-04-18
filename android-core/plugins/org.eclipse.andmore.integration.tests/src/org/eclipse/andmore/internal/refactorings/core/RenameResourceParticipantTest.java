@@ -18,7 +18,7 @@ package org.eclipse.andmore.internal.refactorings.core;
 import static org.junit.Assert.*;
 
 import com.android.annotations.NonNull;
-import com.android.ide.common.resources.ResourceUrl;
+import com.android.resources.ResourceUrl;
 
 import org.eclipse.andmore.internal.project.BaseProjectHelper;
 

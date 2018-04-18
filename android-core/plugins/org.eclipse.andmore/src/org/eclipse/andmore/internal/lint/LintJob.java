@@ -169,9 +169,17 @@ public final class LintJob extends Job {
             } else {
                 EclipseLintClient.clearMarkers(mResources);
             }
-
-            mLint = new LintDriver(mRegistry, mClient);
-            mLint.analyze(new LintRequest(mClient, files).setScope(scope));
+/*
+ * @param registry The registry containing issues to be checked
+ *
+ * @param request The request which points to the original files to be checked,
+ * the original scope, the original [LintClient], as well as the release mode.
+ *
+ * @param client the tool wrapping the analyzer, such as an IDE or a CLI
+ */
+            LintRequest request = new LintRequest(mClient, files).setScope(scope);
+            mLint = new LintDriver(mRegistry, mClient, request);
+            mLint.analyze();
             mFatal = mClient.hasFatalErrors();
             return Status.OK_STATUS;
         } catch (Exception e) {

@@ -46,14 +46,6 @@
                   <artifactId>builder-test-api</artifactId>
                 </exclusion>
                 <exclusion>
-                  <groupId>com.android.tools.jack</groupId>
-                  <artifactId>jack-api</artifactId>
-                </exclusion>
-                <exclusion>
-                  <groupId>com.android.tools.jill</groupId>
-                  <artifactId>jill-api</artifactId>
-                </exclusion>
-                <exclusion>
                   <groupId>com.android.tools.analytics-library</groupId>
                   <artifactId>protos</artifactId>
                 </exclusion>
@@ -76,6 +68,22 @@
                 <exclusion>
                   <groupId>org.bouncycastle</groupId>
                   <artifactId>bcprov-jdk15on</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.ow2.asm</groupId>
+                  <artifactId>asm</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.ow2.asm</groupId>
+                  <artifactId>asm-tree</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.ow2.asm</groupId>
+                  <artifactId>asm-commons</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.ow2.asm</groupId>
+                  <artifactId>asm-util</artifactId>
                 </exclusion>
     	        <exclusion>
     		      <groupId>com.android.tools</groupId>
@@ -125,37 +133,137 @@
                    <groupId>com.android.tools</groupId>
                    <artifactId>repository</artifactId>
     	        </exclusion>
+                <exclusion>
+                  <groupId>com.android.tools.build</groupId>
+                  <artifactId>apksig</artifactId>
+                 </exclusion>
+                 <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-stdlib-jre8</artifactId>
+                </exclusion>
+                 <exclusion>
+                  <groupId>it.unimi.dsi</groupId>
+                  <artifactId>fastutil</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>net.sf.jopt-simple</groupId>
+                  <artifactId>jopt-simple</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>com.googlecode.json-simple</groupId>
+                  <artifactId>json-simple</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-reflect</artifactId>
+                 </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-stdlib</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-stdlib-jre8</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-stdlib-jre7</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.trove4j</groupId>
+                  <artifactId>trove4j</artifactId>
+                </exclusion>
 			</exclusions>
 	      </dependency>
 	      <dependency>
             <groupId>com.android.tools.lint</groupId>
             <artifactId>lint</artifactId>
 			<version>${android.tools.version}</version>
-			<exclusions>
-     	      <exclusion>
-                <groupId>org.eclipse.jdt.core.compiler</groupId>
-                <artifactId>ecj</artifactId>
-		      </exclusion>
-		      <exclusion>
+            <exclusions>
+              <exclusion>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>com.android.tools.build</groupId>
+                <artifactId>manifest-merger</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>com.android.tools.lint</groupId>
+                <artifactId>lint-kotlin</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>com.android.tools</groupId>
+                <artifactId>sdk-common</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>com.android.tools.build</groupId>
+                <artifactId>builder-model</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.ow2.asm</groupId>
+                <artifactId>asm-tree</artifactId>
+              </exclusion>
+              <exclusion>
                 <groupId>org.ow2.asm</groupId>
                 <artifactId>asm-analysis</artifactId>
-    	      </exclusion>
-			</exclusions>
-	      </dependency>
-	      <dependency>
-            <groupId>com.android.tools.external.lombok</groupId>
-            <artifactId>lombok-ast</artifactId>
-            <version>0.2.3</version>
+              </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-reflect</artifactId>
+                 </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-stdlib</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-stdlib-jre8</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-stdlib-jre7</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.trove4j</groupId>
+                  <artifactId>trove4j</artifactId>
+                </exclusion>
+           </exclusions>
 	      </dependency>
 	      <dependency>
             <groupId>com.android.tools.build</groupId>
             <artifactId>manifest-merger</artifactId>
             <version>${android.tools.version}</version>
-	      </dependency>
-	      <dependency>
-            <groupId>com.android.tools.external.com-intellij</groupId>
-            <artifactId>uast</artifactId>
-            <version>162.2228.14</version>
+            <exclusions>
+                <exclusion>
+                  <groupId>com.android.tools</groupId>
+                  <artifactId>common</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>com.android.tools</groupId>
+                  <artifactId>sdklib</artifactId>
+                 </exclusion>
+                <exclusion>
+                  <groupId>com.android.tools</groupId>
+                  <artifactId>sdk-common</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>com.google.code.gson</groupId>
+                  <artifactId>gson</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>org.jetbrains.kotlin</groupId>
+                  <artifactId>kotlin-stdlib-jre8</artifactId>
+                </exclusion>
+                <exclusion>
+                  <groupId>net.sf.kxml</groupId>
+                  <artifactId>kxml2</artifactId>
+                </exclusion>
+            </exclusions>
 	      </dependency>
     </dependencies>
 	<build>
@@ -216,14 +324,9 @@
             			<version>${android.tools.version}</version>
 			          </artifactItem>
 			          <artifactItem>
-                        <groupId>com.android.tools.external.lombok</groupId>
-                        <artifactId>lombok-ast</artifactId>
-                        <version>0.2.3</version>
-			          </artifactItem>
-			          <artifactItem>
-                        <groupId>com.android.tools.external.com-intellij</groupId>
-                        <artifactId>uast</artifactId>
-                        <version>162.2228.14</version>
+                        <groupId>com.android.tools.lint</groupId>
+                        <artifactId>lint-kotlin</artifactId>
+            			<version>${android.tools.version}</version>
 			          </artifactItem>
 			          <artifactItem>
                         <groupId>org.ow2.asm</groupId>
@@ -235,11 +338,46 @@
                         <artifactId>asm-tree</artifactId>
         			    <version>6.1</version>
 			          </artifactItem>
+                      <artifactItem>
+                        <groupId>org.ow2.asm</groupId>
+                        <artifactId>asm-commons</artifactId>
+                        <version>6.1</version>
+                      </artifactItem>
+                      <artifactItem>
+                        <groupId>org.ow2.asm</groupId>
+                        <artifactId>asm-util</artifactId>
+                        <version>6.1</version>
+                      </artifactItem>
 			          <artifactItem>
                         <groupId>org.ow2.asm</groupId>
                         <artifactId>asm-analysis</artifactId>
         			    <version>6.1</version>
 			          </artifactItem>
+                      <artifactItem>
+                        <groupId>com.google.code.gson</groupId>
+                        <artifactId>gson</artifactId>
+                        <version>2.7</version>
+                      </artifactItem>
+                       <artifactItem>
+                          <groupId>com.android.tools.external.org-jetbrains</groupId>
+                          <artifactId>uast</artifactId>
+                          <version>26.1.1</version>
+                       </artifactItem>
+                       <artifactItem>
+                          <groupId>com.android.tools.external.com-intellij</groupId>
+                          <artifactId>kotlin-compiler</artifactId>
+                          <version>26.1.1</version>
+                        </artifactItem>
+                        <artifactItem>
+                          <groupId>org.jetbrains</groupId>
+                          <artifactId>annotations</artifactId>
+                          <version>13.0</version>
+                        </artifactItem>
+                        <artifactItem>
+                          <groupId>com.android.tools.external.com-intellij</groupId>
+                          <artifactId>intellij-core</artifactId>
+                          <version>26.1.1</version>
+                        </artifactItem>
 			        </artifactItems>
                     <outputDirectory>${project.basedir}/libs</outputDirectory>
 	                <overWriteReleases>false</overWriteReleases>

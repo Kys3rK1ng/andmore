@@ -234,7 +234,7 @@ public class NewProjectWizardState {
         }
 
         if (activity != null) {
-            newActivityName = AndroidManifest.extractActivityName(activity.getName(),
+            newActivityName = extractActivityName(activity.getName(),
                     newPackageName);
         }
 
@@ -404,4 +404,30 @@ public class NewProjectWizardState {
          */
         ANY;
     }
+
+    /**
+     * Given a fully qualified activity name (e.g. com.foo.test.MyClass) and given a project
+     * package base name (e.g. com.foo), returns the relative activity name that would be used
+     * the "name" attribute of an "activity" element.
+     *
+     * @param fullActivityName a fully qualified activity class name, e.g. "com.foo.test.MyClass"
+     * @param packageName The project base package name, e.g. "com.foo"
+     * @return The relative activity name if it can be computed or the original fullActivityName.
+     */
+    @Nullable
+    public static String extractActivityName(
+            @Nullable String fullActivityName,
+            @Nullable String packageName) {
+        if (packageName != null && fullActivityName != null) {
+            if (!packageName.isEmpty() && fullActivityName.startsWith(packageName)) {
+                String name = fullActivityName.substring(packageName.length());
+                if (!name.isEmpty() && name.charAt(0) == '.') {
+                    return name;
+                }
+            }
+        }
+
+        return fullActivityName;
+    }
+
 }

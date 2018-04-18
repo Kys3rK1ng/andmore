@@ -62,7 +62,7 @@ import com.android.sdklib.IAndroidTarget;
 import com.android.sdklib.devices.Device;
 import com.android.sdklib.devices.State;
 import com.android.utils.Pair;
-import com.google.common.base.Objects;
+import com.google.common.base.MoreObjects;
 
 /**
  * A {@linkplain Configuration} is a selection of device, orientation, theme,
@@ -1072,7 +1072,7 @@ public class Configuration {
 
     @Override
     public String toString() {
-        return Objects.toStringHelper(this.getClass())
+        return MoreObjects.toStringHelper(this.getClass())
                 .add("display", getDisplayName())                 //$NON-NLS-1$
                 .add("persistent", toPersistentString())          //$NON-NLS-1$
                 .toString();

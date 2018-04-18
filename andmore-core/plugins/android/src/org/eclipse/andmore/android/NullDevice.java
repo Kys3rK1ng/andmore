@@ -219,6 +219,17 @@ public class NullDevice implements IDevice {
 	}
 
 	@Override
+	public void executeShellCommand(
+			String command,
+            IShellOutputReceiver receiver,
+            long maxTimeout,
+            long maxTimeToOutputResponse,
+            TimeUnit maxTimeUnits)
+			throws TimeoutException, AdbCommandRejectedException, ShellCommandUnresponsiveException, IOException {
+		throw new IOException(DEVICE_NAME);
+		
+	}
+	@Override
 	public void runEventLogService(LogReceiver receiver)
 			throws TimeoutException, AdbCommandRejectedException, IOException {
 		throw new IOException(DEVICE_NAME);
@@ -367,5 +378,6 @@ public class NullDevice implements IDevice {
 	public AndroidVersion getVersion() {
 		return AndroidVersion.DEFAULT;
 	}
+
 
 }

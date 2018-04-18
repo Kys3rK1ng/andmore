@@ -18,7 +18,7 @@ package org.eclipse.andmore.internal.build;
 
 import com.android.SdkConstants;
 import com.android.annotations.NonNull;
-import com.android.sdklib.build.RenderScriptChecker;
+import com.android.sdklib.build.legacy.RenderScriptChecker;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.core.resources.IFile;

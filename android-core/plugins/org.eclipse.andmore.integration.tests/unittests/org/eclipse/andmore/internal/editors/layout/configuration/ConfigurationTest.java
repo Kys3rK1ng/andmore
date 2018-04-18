@@ -24,6 +24,7 @@ import com.android.sdklib.devices.DeviceManager;
 import com.android.sdklib.devices.Screen;
 import com.android.utils.StdLogger;
 
+import java.io.File;
 import java.lang.reflect.Constructor;
 import java.util.Collection;
 
@@ -48,7 +49,7 @@ public class ConfigurationTest extends TestCase {
         assertEquals("@style/Theme", configuration.getTheme());
 
         DeviceManager deviceManager = DeviceManager.createInstance(
-                                                        null /*osSdkPath*/,
+                                                        (File)null /*osSdkPath*/,
                                                         new StdLogger(StdLogger.Level.VERBOSE));
         Collection<Device> devices = deviceManager.getDevices(DeviceManager.DeviceFilter.DEFAULT);
         assertNotNull(devices);
@@ -118,7 +119,7 @@ public class ConfigurationTest extends TestCase {
         configuration.setTheme("@style/Theme");
         assertEquals("@style/Theme", configuration.getTheme());
         DeviceManager deviceManager = DeviceManager.createInstance(
-                                            null /*osSdkPath*/,
+                                            (File)null /*osSdkPath*/,
                                             new StdLogger(StdLogger.Level.VERBOSE));
         Device[] devices = deviceManager.getDevices(DeviceManager.DeviceFilter.DEFAULT).toArray(new Device[0]);
         assertNotNull(devices);

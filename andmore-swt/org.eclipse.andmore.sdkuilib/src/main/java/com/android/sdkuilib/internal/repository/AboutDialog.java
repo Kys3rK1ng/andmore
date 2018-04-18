@@ -98,7 +98,7 @@ public class AboutDialog extends UpdaterBaseDialog {
      * @return String
      */
     private String getVersion() {
-    	LocalPackage platformPackage = mSdkContext.getHandler().getLatestLocalPackageForPrefix(SdkConstants.FD_TOOLS, false, mSdkContext.getProgressIndicator());
+    	LocalPackage platformPackage = mSdkContext.getHandler().getLatestLocalPackageForPrefix(SdkConstants.FD_TOOLS, null, false, mSdkContext.getProgressIndicator());
     	if (platformPackage != null)
     		return platformPackage.getVersion().toShortString();
     	return getToolsVersion();

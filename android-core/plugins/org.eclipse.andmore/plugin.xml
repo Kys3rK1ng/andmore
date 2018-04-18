@@ -972,6 +972,7 @@
                 toolbarPath="android_project">
             </action>
         </actionSet>
+        <!-- TODO - Fix broken menu item
         <actionSet
             description="Android Lint"
             id="adt.actionSet.lint"
@@ -987,6 +988,7 @@
                 toolbarPath="android_project">
             </action>
         </actionSet>
+        -->
     </extension>
     <extension point="org.eclipse.debug.core.launchDelegates">
         <launchDelegate

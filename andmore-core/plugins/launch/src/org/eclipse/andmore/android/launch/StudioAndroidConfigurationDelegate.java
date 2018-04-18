@@ -37,6 +37,7 @@ import org.eclipse.andmore.internal.launch.AndroidLaunch;
 import org.eclipse.andmore.internal.launch.AndroidLaunchController;
 import org.eclipse.andmore.internal.launch.LaunchConfigDelegate;
 import org.eclipse.andmore.internal.preferences.AdtPrefs;
+import org.eclipse.andmore.internal.project.AndroidManifestHelper;
 import org.eclipse.andmore.internal.sdk.Sdk;
 import org.eclipse.andmore.io.IFolderWrapper;
 import org.eclipse.core.resources.IProject;
@@ -325,8 +326,8 @@ public class StudioAndroidConfigurationDelegate extends LaunchConfigDelegate {
 
 				String appToLaunch = null;
 				if (launchAction == ILaunchConfigurationConstants.ATTR_LAUNCH_ACTION_DEFAULT) {
-					ManifestData manifestParser = AndroidManifestParser.parse(new IFolderWrapper(project));
-					Activity launcherActivity = manifestParser.getLauncherActivity();
+					ManifestData manifestData = AndroidManifestHelper.parseForData(project);
+					Activity launcherActivity = manifestData.getLauncherActivity();
 					String activityName = null;
 					if (launcherActivity != null) {
 						activityName = launcherActivity.getName();

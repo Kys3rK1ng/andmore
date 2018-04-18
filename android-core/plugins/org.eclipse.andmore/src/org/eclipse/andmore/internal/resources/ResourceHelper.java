@@ -84,7 +84,6 @@ import org.xml.sax.InputSource;
 import com.android.ide.common.rendering.api.ResourceValue;
 import com.android.ide.common.resources.ResourceDeltaKind;
 import com.android.ide.common.resources.ResourceResolver;
-import com.android.ide.common.resources.ResourceUrl;
 import com.android.ide.common.resources.configuration.CountryCodeQualifier;
 import com.android.ide.common.resources.configuration.DensityQualifier;
 import com.android.ide.common.resources.configuration.FolderConfiguration;
@@ -111,6 +110,7 @@ import com.android.ide.common.resources.configuration.VersionQualifier;
 import com.android.resources.FolderTypeRelationship;
 import com.android.resources.ResourceFolderType;
 import com.android.resources.ResourceType;
+import com.android.resources.ResourceUrl;
 import com.android.utils.Pair;
 
 /**

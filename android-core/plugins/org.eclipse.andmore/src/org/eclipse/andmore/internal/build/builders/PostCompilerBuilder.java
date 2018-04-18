@@ -50,6 +50,7 @@ import org.eclipse.andmore.internal.build.ToolChain;
 import org.eclipse.andmore.internal.lint.LintDeltaProcessor;
 import org.eclipse.andmore.internal.preferences.AdtPrefs;
 import org.eclipse.andmore.internal.preferences.AdtPrefs.BuildVerbosity;
+import org.eclipse.andmore.internal.project.AndroidManifestHelper;
 import org.eclipse.andmore.internal.project.ApkInstallManager;
 import org.eclipse.andmore.internal.project.BaseProjectHelper;
 import org.eclipse.andmore.internal.project.LibraryClasspathContainerInitializer;
@@ -76,6 +77,7 @@ import org.eclipse.jdt.core.JavaCore;
 import com.android.SdkConstants;
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
+import com.android.ide.common.xml.ManifestData;
 import com.android.prefs.AndroidLocation.AndroidLocationException;
 import com.android.sdklib.build.ApkBuilder;
 import com.android.sdklib.build.ApkCreationException;
@@ -396,7 +398,8 @@ public class PostCompilerBuilder extends BaseBuilder {
 
                     // resource to the AndroidManifest.xml file
                     IFile manifestFile = project.getFile(SdkConstants.FN_ANDROID_MANIFEST_XML);
-                    String appPackage = AndroidManifest.getPackage(new IFileWrapper(manifestFile));
+                    ManifestData manifestData = AndroidManifestHelper.parseForData(manifestFile);
+                    String appPackage = manifestData.getPackage();
 
                     IFolder javaOutputFolder = BaseProjectHelper.getJavaOutputFolder(project);
 

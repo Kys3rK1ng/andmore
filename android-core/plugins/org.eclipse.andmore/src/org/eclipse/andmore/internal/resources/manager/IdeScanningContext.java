@@ -59,6 +59,7 @@ public class IdeScanningContext extends ScanningContext {
     private boolean mValidate;
     private Map<String, AttributeInfo> mAttributeMap;
     private ResourceRepository mFrameworkResources;
+    protected final ResourceRepository mRepository;
 
     /**
      * Constructs a new {@link IdeScanningContext}
@@ -70,7 +71,8 @@ public class IdeScanningContext extends ScanningContext {
      */
     public IdeScanningContext(@NonNull ResourceRepository repository, @NonNull IProject project,
             boolean validate) {
-        super(repository);
+        super();
+        mRepository = repository;
         mProject = project;
         mValidate = validate;
 
@@ -82,6 +84,16 @@ public class IdeScanningContext extends ScanningContext {
                 mFrameworkResources = targetData.getFrameworkResources();
             }
         }
+    }
+
+    /**
+     * Returns the repository associated with this scanning context
+     *
+     * @return the associated repository, never null
+     */
+    @NonNull
+    public ResourceRepository getRepository() {
+        return mRepository;
     }
 
     @Override

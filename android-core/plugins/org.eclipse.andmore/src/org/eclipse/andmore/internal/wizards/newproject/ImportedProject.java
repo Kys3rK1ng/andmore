@@ -17,18 +17,13 @@ package org.eclipse.andmore.internal.wizards.newproject;
 
 import static com.android.SdkConstants.ATTR_NAME;
 
-import com.android.annotations.NonNull;
-import com.android.annotations.Nullable;
-import com.android.ide.common.xml.AndroidManifestParser;
-import com.android.ide.common.xml.ManifestData;
-import com.android.ide.common.xml.ManifestData.Activity;
-import com.android.io.FolderWrapper;
-import com.android.sdklib.AndroidVersion;
-import com.android.sdklib.IAndroidTarget;
-import com.android.sdklib.internal.project.ProjectProperties;
-import com.android.sdklib.internal.project.ProjectProperties.PropertyType;
-import com.google.common.base.Charsets;
-import com.google.common.io.Files;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Collection;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.andmore.internal.editors.layout.gle2.DomUtilities;
@@ -41,13 +36,19 @@ import org.eclipse.core.runtime.IStatus;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-import org.xml.sax.SAXException;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Collection;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import com.android.SdkConstants;
+import com.android.annotations.NonNull;
+import com.android.annotations.Nullable;
+import com.android.ide.common.xml.AndroidManifestParser;
+import com.android.ide.common.xml.ManifestData;
+import com.android.ide.common.xml.ManifestData.Activity;
+import com.android.sdklib.AndroidVersion;
+import com.android.sdklib.IAndroidTarget;
+import com.android.sdklib.internal.project.ProjectProperties;
+import com.android.sdklib.internal.project.ProjectProperties.PropertyType;
+import com.google.common.base.Charsets;
+import com.google.common.io.Files;
 
 /** An Android project to be imported */
 class ImportedProject {
@@ -75,11 +76,9 @@ class ImportedProject {
     ManifestData getManifest() {
         if (mManifest == null) {
             try {
-                mManifest = AndroidManifestParser.parse(new FolderWrapper(mLocation));
-            } catch (SAXException e) {
-                // Some sort of error in the manifest file: report to the user in a better way?
-                AndmoreAndroidPlugin.log(e, null);
-                return null;
+            	File xmlFile = new File(mLocation, SdkConstants.FN_ANDROID_MANIFEST_XML);
+            	Path path = Paths.get(xmlFile.toURI());
+                mManifest = AndroidManifestParser.parse(path);
             } catch (Exception e) {
                 AndmoreAndroidPlugin.log(e, null);
                 return null;

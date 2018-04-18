@@ -173,7 +173,7 @@ public class DexDumpAction implements IObjectActionDelegate {
 
                 final BufferedWriter writer = new BufferedWriter(new FileWriter(dstFile));
                 try {
-                    final String lineSep = SdkUtils.getLineSeparator();
+                    final String lineSep = System.getProperty("line.separator");
 
                     int err = GrabProcessOutput.grabProcessOutput(
                             process,

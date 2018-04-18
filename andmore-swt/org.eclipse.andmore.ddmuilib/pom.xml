@@ -44,8 +44,9 @@
     </dependency>
   </dependencies>
 	<build>
-	<!-- plain surefire tests without tycho -->
-	<testSourceDirectory>${basedir}/test-src</testSourceDirectory>
+      <sourceDirectory>${basedir}/src/main/java</sourceDirectory>
+	  <!-- plain surefire tests without tycho -->
+	  <testSourceDirectory>${basedir}/test-src</testSourceDirectory>
 		<plugins>
 			<plugin>
 				<groupId>org.eclipse.tycho</groupId>

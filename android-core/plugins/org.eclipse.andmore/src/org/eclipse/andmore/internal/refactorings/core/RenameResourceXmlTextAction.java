@@ -25,8 +25,8 @@ import static com.android.SdkConstants.TAG_ITEM;
 
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
-import com.android.ide.common.resources.ResourceUrl;
 import com.android.resources.ResourceType;
+import com.android.resources.ResourceUrl;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.andmore.internal.editors.layout.gle2.DomUtilities;
@@ -263,7 +263,7 @@ public final class RenameResourceXmlTextAction extends Action {
         }
         ResourceType type = ResourceType.getEnum(typeString);
         if (type != null) {
-            return ResourceUrl.create(type, name, false, false);
+            return ResourceUrl.create(type, name, false);
         }
 
         return null;

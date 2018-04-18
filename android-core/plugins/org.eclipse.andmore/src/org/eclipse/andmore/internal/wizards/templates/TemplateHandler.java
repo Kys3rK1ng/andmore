@@ -787,7 +787,7 @@ class TemplateHandler {
         } else {
             // Just insert into file along with comment, using the "standard" conflict
             // syntax that many tools and editors recognize.
-            String sep = SdkUtils.getLineSeparator();
+            String sep = System.getProperty("line.separator");
             contents =
                     "<<<<<<< Original" + sep
                     + currentXml + sep

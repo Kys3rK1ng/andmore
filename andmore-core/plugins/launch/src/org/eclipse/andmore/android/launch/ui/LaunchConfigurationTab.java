@@ -29,6 +29,7 @@ import org.eclipse.andmore.android.launch.ILaunchConfigurationConstants;
 import org.eclipse.andmore.android.launch.LaunchPlugin;
 import org.eclipse.andmore.android.launch.LaunchUtils;
 import org.eclipse.andmore.android.launch.i18n.LaunchNLS;
+import org.eclipse.andmore.internal.project.AndroidManifestHelper;
 import org.eclipse.andmore.io.IFolderWrapper;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
@@ -806,14 +807,14 @@ public class LaunchConfigurationTab extends AbstractLaunchConfigurationTab {
 			Activity[] currentActivities = null;
 			boolean activityValid = false;
 
-			ManifestData manifestParser = null;
+			ManifestData manifestData = null;
 			try {
-				manifestParser = AndroidManifestParser.parse(new IFolderWrapper(project));
+				manifestData = AndroidManifestHelper.parseForData(project);
 			} catch (Exception e) {
 				AndmoreLogger.error(LaunchUtils.class, "An error occurred trying to parse AndroidManifest", e); //$NON-NLS-1$
 			}
-			if (manifestParser != null) {
-				currentActivities = manifestParser.getActivities();
+			if (manifestData != null) {
+				currentActivities = manifestData.getActivities();
 			} else {
 				// There's a problem with the manifest file / parser. Invalidate
 				// current settings.

@@ -34,6 +34,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 
+import org.eclipse.andmore.internal.project.AndroidManifestHelper;
 import org.eclipse.andmore.internal.project.BaseProjectHelper;
 import org.eclipse.andmore.internal.sdk.ProjectState;
 import org.eclipse.andmore.internal.sdk.Sdk;
@@ -57,6 +58,7 @@ import org.eclipse.swt.widgets.Shell;
 import com.android.SdkConstants;
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
+import com.android.ide.common.xml.ManifestData;
 import com.android.io.IAbstractFile;
 import com.android.repository.io.FileOpUtils;
 import com.android.xml.AndroidManifest;
@@ -416,9 +418,8 @@ public class BuildFileCreator {
      * subdirectories in the project.
      */
     private void createAndroidSourceSets() {
-        IFolderWrapper projectFolder = new IFolderWrapper(mModule.getProject());
-        IAbstractFile mManifestFile = AndroidManifest.getManifest(projectFolder);
-        if (mManifestFile == null) {
+        ManifestData manifestData = AndroidManifestHelper.parseForData(mModule.getProject());
+         if (manifestData == null) {
             return;
         }
         List<String> srcDirs = new ArrayList<String>();

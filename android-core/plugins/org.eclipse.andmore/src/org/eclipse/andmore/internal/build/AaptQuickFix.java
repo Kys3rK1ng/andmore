@@ -20,8 +20,8 @@ import static com.android.SdkConstants.ANDROID_URI;
 import static com.android.SdkConstants.XMLNS_ANDROID;
 import static com.android.SdkConstants.XMLNS_URI;
 
-import com.android.ide.common.resources.ResourceUrl;
 import com.android.resources.ResourceType;
+import com.android.resources.ResourceUrl;
 import com.android.utils.Pair;
 
 import org.eclipse.andmore.AndmoreAndroidConstants;

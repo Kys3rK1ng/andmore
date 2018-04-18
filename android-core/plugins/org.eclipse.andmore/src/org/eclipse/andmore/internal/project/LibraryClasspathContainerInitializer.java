@@ -21,10 +21,10 @@ import static org.eclipse.andmore.AndmoreAndroidConstants.CONTAINER_DEPENDENCIES
 import com.android.SdkConstants;
 import com.android.ide.common.sdk.LoadStatus;
 import com.android.sdklib.BuildToolInfo;
-import com.android.sdklib.build.JarListSanitizer;
-import com.android.sdklib.build.JarListSanitizer.DifferentLibException;
-import com.android.sdklib.build.JarListSanitizer.Sha1Exception;
-import com.android.sdklib.build.RenderScriptProcessor;
+import com.android.sdklib.build.legacy.JarListSanitizer;
+import com.android.sdklib.build.legacy.JarListSanitizer.DifferentLibException;
+import com.android.sdklib.build.legacy.JarListSanitizer.Sha1Exception;
+import com.android.sdklib.build.legacy.RenderScriptProcessor;
 
 import org.eclipse.andmore.AndmoreAndroidConstants;
 import org.eclipse.andmore.AndmoreAndroidPlugin;

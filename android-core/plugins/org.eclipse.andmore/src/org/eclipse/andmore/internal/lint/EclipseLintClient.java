@@ -18,42 +18,20 @@ package org.eclipse.andmore.internal.lint;
 import static com.android.SdkConstants.DOT_JAR;
 import static com.android.SdkConstants.DOT_XML;
 import static com.android.SdkConstants.FD_NATIVE_LIBS;
-import static org.eclipse.andmore.AndmoreAndroidConstants.MARKER_LINT;
 import static org.eclipse.andmore.AdtUtils.workspacePathToFile;
+import static org.eclipse.andmore.AndmoreAndroidConstants.MARKER_LINT;
 
-import com.android.annotations.NonNull;
-import com.android.annotations.Nullable;
-import com.android.sdklib.IAndroidTarget;
-import com.android.tools.lint.checks.BuiltinIssueRegistry;
-import com.android.tools.lint.client.api.Configuration;
-import com.android.tools.lint.client.api.IssueRegistry;
-import com.android.tools.lint.client.api.JavaEvaluator;
-import com.android.tools.lint.client.api.JavaParser;
-import com.android.tools.lint.client.api.LintClient;
-import com.android.tools.lint.client.api.XmlParser;
-import com.android.tools.lint.detector.api.ClassContext;
-import com.android.tools.lint.detector.api.Context;
-import com.android.tools.lint.detector.api.DefaultPosition;
-import com.android.tools.lint.detector.api.Detector;
-import com.android.tools.lint.detector.api.Issue;
-import com.android.tools.lint.detector.api.JavaContext;
-import com.android.tools.lint.detector.api.LintUtils;
-import com.android.tools.lint.detector.api.Location;
-import com.android.tools.lint.detector.api.Location.Handle;
-import com.android.tools.lint.detector.api.Position;
-import com.android.tools.lint.detector.api.Project;
-import com.android.tools.lint.detector.api.Severity;
-import com.android.tools.lint.detector.api.TextFormat;
-import com.android.tools.lint.detector.api.XmlContext;
-import com.android.utils.Pair;
-import com.android.utils.SdkUtils;
-import com.google.common.collect.Maps;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiJavaFile;
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
-import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.andmore.AdtUtils;
+import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.andmore.internal.editors.layout.LayoutEditorDelegate;
 import org.eclipse.andmore.internal.editors.layout.uimodel.UiViewElementNode;
 import org.eclipse.andmore.internal.preferences.AdtPrefs;
@@ -72,16 +50,6 @@ import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.ITypeHierarchy;
 import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
-import org.eclipse.jdt.internal.compiler.CompilationResult;
-import org.eclipse.jdt.internal.compiler.DefaultErrorHandlingPolicies;
-import org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration;
-import org.eclipse.jdt.internal.compiler.batch.CompilationUnit;
-import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
-import org.eclipse.jdt.internal.compiler.impl.CompilerOptions;
-import org.eclipse.jdt.internal.compiler.parser.Parser;
-import org.eclipse.jdt.internal.compiler.problem.AbortCompilation;
-import org.eclipse.jdt.internal.compiler.problem.DefaultProblemFactory;
-import org.eclipse.jdt.internal.compiler.problem.ProblemReporter;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.IDocument;
 import org.eclipse.jface.text.IRegion;
@@ -95,39 +63,64 @@ import org.eclipse.wst.sse.core.StructuredModelManager;
 import org.eclipse.wst.sse.core.internal.provisional.IModelManager;
 import org.eclipse.wst.sse.core.internal.provisional.IStructuredModel;
 import org.eclipse.wst.sse.core.internal.provisional.IndexedRegion;
-import org.eclipse.wst.sse.core.internal.provisional.text.IStructuredDocument;
-import org.eclipse.wst.xml.core.internal.provisional.document.IDOMModel;
 import org.w3c.dom.Attr;
-import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.WeakHashMap;
-
-import lombok.ast.ecj.EcjTreeConverter;
-import lombok.ast.grammar.ParseProblem;
-import lombok.ast.grammar.Source;
+import com.android.annotations.NonNull;
+import com.android.annotations.Nullable;
+import com.android.sdklib.IAndroidTarget;
+import com.android.tools.lint.LintCliClient;
+import com.android.tools.lint.checks.BuiltinIssueRegistry;
+import com.android.tools.lint.client.api.Configuration;
+import com.android.tools.lint.client.api.IssueRegistry;
+import com.android.tools.lint.detector.api.ClassContext;
+import com.android.tools.lint.detector.api.Context;
+import com.android.tools.lint.detector.api.Detector;
+import com.android.tools.lint.detector.api.Issue;
+import com.android.tools.lint.detector.api.LintFix;
+import com.android.tools.lint.detector.api.Location;
+import com.android.tools.lint.detector.api.Position;
+import com.android.tools.lint.detector.api.Project;
+import com.android.tools.lint.detector.api.Severity;
+import com.android.tools.lint.detector.api.TextFormat;
+import com.android.utils.Pair;
+import com.android.utils.SdkUtils;
+import com.google.common.collect.Maps;
 
 /**
  * Eclipse implementation for running lint on workspace files and projects.
+ * The super class implements all the the abstract LintClient base class methods
+ * some of which are overridden here to adapt the client to the Eclipse environment.
+ * Note that both Java and Kotlin are supported.
  */
-@SuppressWarnings("restriction") // DOM model
-public class EclipseLintClient extends LintClient {
+public class EclipseLintClient extends LintCliClient {
+	
     static final String MARKER_CHECKID_PROPERTY = "checkid";    //$NON-NLS-1$
-    private static final String MODEL_PROPERTY = "model";       //$NON-NLS-1$
+    private static final List<File> EMPTY_FILE_LIST;
+    
+    static {
+    	EMPTY_FILE_LIST = Collections.emptyList();
+    }
+    /** Associated resources (project, file or null) */
     private final List<? extends IResource> mResources;
+    /** Associated document, or null if the resource */
     private final IDocument mDocument;
-    private boolean mWasFatal;
+    /** Flag set true if only fatal issues should be reported (and therefore checked) */
     private boolean mFatalOnly;
-    private EclipseJavaParser mJavaParser;
+    /** Flag set true if a fatal error was encountered */
+    private boolean mWasFatal;
+    /** Flag set true if collect node positions for errors in XML */
     private boolean mCollectNodes;
+    /** Maps nodes to issues (one-to-one only) */
     private Map<Node, IMarker> mNodeMap;
+    /** Last eclpse project */
+    private IProject mLastEclipseProject;
+    /** Last Lint project */
+    private Project mLastLintProject;
+    /** Flag set true if search for super classes */
+    private boolean mSearchForSuperClasses;
+    /** Map container for classpath information */
+    private Map<Project, ClassPathInfo> mProjectInfo;
 
     /**
      * Creates a new {@link EclipseLintClient}.
@@ -143,7 +136,7 @@ public class EclipseLintClient extends LintClient {
         mResources = resources;
         mDocument = document;
         mFatalOnly = fatalOnly;
-    }
+     }
 
     /**
      * Returns true if lint should only check fatal issues
@@ -176,7 +169,6 @@ public class EclipseLintClient extends LintClient {
         if (mNodeMap != null) {
             return mNodeMap.get(node.getXmlNode());
         }
-
         return null;
     }
 
@@ -193,206 +185,77 @@ public class EclipseLintClient extends LintClient {
         if (mNodeMap != null) {
             return mNodeMap.keySet();
         }
-
         return null;
+    }
+
+    /**
+     * Sets whether this client should search for super types on its own. This
+     * is typically not needed when doing a full lint run (because lint will
+     * look at all classes and libraries), but is useful during incremental
+     * analysis when lint is only looking at a subset of classes. In that case,
+     * we want to use Eclipse's data structures for super classes.
+     *
+     * @param search whether to use a custom Eclipse search for super class
+     *            names
+     */
+    public void setSearchForSuperClasses(boolean search) {
+        mSearchForSuperClasses = search;
+    }
+
+    /**
+     * Whether this lint client is searching for super types. See
+     * {@link #setSearchForSuperClasses(boolean)} for details.
+     *
+     * @return whether the client will search for super types
+     */
+    public boolean getSearchForSuperClasses() {
+        return mSearchForSuperClasses;
+    }
+
+    /**
+     * Returns true if a fatal error was encountered
+     *
+     * @return true if a fatal error was encountered
+     */
+    public boolean hasFatalErrors() {
+        return mWasFatal;
+    }
+
+
+    /**
+     * Show a dialog with errors for the given file
+     *
+     * @param shell the parent shell to attach the dialog to
+     * @param file the file to show the errors for
+     * @param editor the editor for the file, if known
+     */
+    public static void showErrors(
+            @NonNull Shell shell,
+            @NonNull IFile file,
+            @Nullable IEditorPart editor) {
+        LintListDialog dialog = new LintListDialog(shell, file, editor);
+        dialog.open();
+    }
+
+    /**
+     * Returns the registry of issues to check from within Eclipse.
+     *
+     * @return the issue registry to use to access detectors and issues
+     */
+    public static IssueRegistry getRegistry() {
+        return new BuiltinIssueRegistry();
     }
 
     // ----- Extends LintClient -----
 
     @Override
-    public void log(@NonNull Severity severity, @Nullable Throwable exception,
+    public void log(Severity severity, @Nullable Throwable exception,
             @Nullable String format, @Nullable Object... args) {
         if (exception == null) {
             AndmoreAndroidPlugin.log(IStatus.WARNING, format, args);
         } else {
             AndmoreAndroidPlugin.log(exception, format, args);
         }
-    }
-
-    @Override
-    public XmlParser getXmlParser() {
-        return new XmlParser() {
-            @Override
-            public Document parseXml(@NonNull XmlContext context) {
-                // Map File to IFile
-                IFile file = AdtUtils.fileToIFile(context.file);
-                if (file == null || !file.exists()) {
-                    String path = context.file.getPath();
-                    AndmoreAndroidPlugin.log(IStatus.ERROR, "Can't find file %1$s in workspace", path);
-                    return null;
-                }
-
-                IStructuredModel model = null;
-                try {
-                    IModelManager modelManager = StructuredModelManager.getModelManager();
-                    if (modelManager == null) {
-                        // This can happen if incremental lint is running right as Eclipse is
-                        // shutting down
-                        return null;
-                    }
-                    model = modelManager.getModelForRead(file);
-                    if (model instanceof IDOMModel) {
-                        context.setProperty(MODEL_PROPERTY, model);
-                        IDOMModel domModel = (IDOMModel) model;
-                        return domModel.getDocument();
-                    }
-                } catch (IOException e) {
-                    AndmoreAndroidPlugin.log(e, "Cannot read XML file");
-                } catch (CoreException e) {
-                    AndmoreAndroidPlugin.log(e, null);
-                }
-
-                return null;
-            }
-
-            @Override
-            public @NonNull Location getLocation(@NonNull XmlContext context, @NonNull Node node) {
-                IStructuredModel model = (IStructuredModel) context.getProperty(MODEL_PROPERTY);
-                return new LazyLocation(context.file, model.getStructuredDocument(),
-                        (IndexedRegion) node);
-            }
-
-            @Override
-            public @NonNull Location getLocation(@NonNull XmlContext context, @NonNull Node node,
-                    int start, int end) {
-                IndexedRegion region = (IndexedRegion) node;
-                int nodeStart = region.getStartOffset();
-
-                IStructuredModel model = (IStructuredModel) context.getProperty(MODEL_PROPERTY);
-                // Get line number
-                LazyLocation location = new LazyLocation(context.file,
-                        model.getStructuredDocument(), region);
-                int line = location.getStart().getLine();
-
-                Position startPos = new DefaultPosition(line, -1, nodeStart + start);
-                Position endPos = new DefaultPosition(line, -1, nodeStart + end);
-                return Location.create(context.file, startPos, endPos);
-            }
-
-            @Override
-            public int getNodeStartOffset(@NonNull XmlContext context, @NonNull Node node) {
-                IndexedRegion region = (IndexedRegion) node;
-                return region.getStartOffset();
-            }
-
-            @Override
-            public int getNodeEndOffset(@NonNull XmlContext context, @NonNull Node node) {
-                IndexedRegion region = (IndexedRegion) node;
-                return region.getEndOffset();
-            }
-
-            @Override
-            public @NonNull Handle createLocationHandle(final @NonNull XmlContext context,
-                    final @NonNull Node node) {
-                IStructuredModel model = (IStructuredModel) context.getProperty(MODEL_PROPERTY);
-                return new LazyLocation(context.file, model.getStructuredDocument(),
-                        (IndexedRegion) node).getHandle();
-            }
-
-            @Override
-            public void dispose(@NonNull XmlContext context, @NonNull Document document) {
-                IStructuredModel model = (IStructuredModel) context.getProperty(MODEL_PROPERTY);
-                assert model != null : context.file;
-                if (model != null) {
-                    model.releaseFromRead();
-                }
-            }
-
-            @Override
-            public Location getNameLocation(@NonNull XmlContext context, @NonNull Node node) {
-                IndexedRegion region = (IndexedRegion) node;
-
-                IStructuredModel model = (IStructuredModel) context.getProperty(MODEL_PROPERTY);
-                // Get line number
-                LazyLocation location = new LazyLocation(context.file,
-                        model.getStructuredDocument(), region);
-                int line = location.getStart().getLine();
-
-                Position startPos = new DefaultPosition(line, -1, region.getStartOffset());
-                Position endPos = new DefaultPosition(line, -1, region.getEndOffset());
-
-                return Location.create(context.file, startPos, endPos);
-            }
-
-            @Override
-            public Location getValueLocation(@NonNull XmlContext context, @NonNull Attr attribute) {
-                IndexedRegion region = (IndexedRegion) attribute;
-
-                IStructuredModel model = (IStructuredModel) context.getProperty(MODEL_PROPERTY);
-                // Get line number
-                LazyLocation location = new LazyLocation(context.file,
-                        model.getStructuredDocument(), region);
-                int line = location.getStart().getLine();
-
-                Position startPos = new DefaultPosition(line, -1, region.getStartOffset());
-                Position endPos = new DefaultPosition(line, -1, region.getEndOffset());
-
-                return Location.create(context.file, startPos, endPos);
-            }
-
-            @Override
-            public Node findNodeAt(XmlContext arg0, int arg1)
-            {
-                return null;
-            }
-        };
-    }
-
-    @Override
-    public JavaParser getJavaParser(@Nullable Project project) {
-        if (mJavaParser == null) {
-            mJavaParser = new EclipseJavaParser();
-        }
-
-        return mJavaParser;
-    }
-
-    // Cache for {@link getProject}
-    private IProject mLastEclipseProject;
-    private Project mLastLintProject;
-
-    private IProject getProject(Project project) {
-        if (project == mLastLintProject) {
-            return mLastEclipseProject;
-        }
-
-        mLastLintProject = project;
-        mLastEclipseProject = null;
-
-        if (mResources != null) {
-            if (mResources.size() == 1) {
-                IProject p = mResources.get(0).getProject();
-                mLastEclipseProject = p;
-                return p;
-            }
-
-            IProject last = null;
-            for (IResource resource : mResources) {
-                IProject p = resource.getProject();
-                if (p != last) {
-                    if (project.getDir().equals(AdtUtils.getAbsolutePath(p).toFile())) {
-                        mLastEclipseProject = p;
-                        return p;
-                    }
-                    last = p;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    @Override
-    @NonNull
-    public String getProjectName(@NonNull Project project) {
-        // Initialize the lint project's name to the name of the Eclipse project,
-        // which might differ from the directory name
-        IProject eclipseProject = getProject(project);
-        if (eclipseProject != null) {
-            return eclipseProject.getName();
-        }
-
-        return super.getProjectName(project);
     }
 
     /**
@@ -410,15 +273,26 @@ public class EclipseLintClient extends LintClient {
                 return ProjectLintConfiguration.get(this, eclipseProject, mFatalOnly);
             }
         }
-
         return GlobalLintConfiguration.get();
     }
 
     @Override
-    public void report(@NonNull Context context, @NonNull Issue issue, @NonNull Severity s,
-            @Nullable Location location,
-            @NonNull String message, TextFormat arg5) {
-        int severity = getMarkerSeverity(s);
+    @NonNull
+    public String getProjectName(Project project) {
+    	if (project == null)
+    		return "unknown";
+        // Initialize the lint project's name to the name of the Eclipse project,
+        // which might differ from the directory name
+        IProject eclipseProject = getProject(project);
+        if (eclipseProject != null) {
+            return eclipseProject.getName();
+        }
+        return super.getProjectName(project);
+    }
+
+	@Override
+	public void report(Context context, Issue issue, Severity level, Location location, String message, TextFormat textForma, LintFix linFix) {
+        int severity = getMarkerSeverity(level);
         IMarker marker = null;
         if (location != null) {
             Position startPosition = location.getStart();
@@ -444,12 +318,10 @@ public class EclipseLintClient extends LintClient {
                 }
             }
         }
-
         if (marker == null) {
             marker = BaseProjectHelper.markResource(mResources.get(0), MARKER_LINT,
                         message, 0, severity);
         }
-
         if (marker != null) {
             // Store marker id such that we can recognize it from the suppress quickfix
             try {
@@ -458,15 +330,13 @@ public class EclipseLintClient extends LintClient {
                 AndmoreAndroidPlugin.log(e, null);
             }
         }
-
-        if (s == Severity.FATAL) {
+        if (level == Severity.FATAL) {
             mWasFatal = true;
         }
-
         if (mCollectNodes && location != null && marker != null) {
-            if (location instanceof LazyLocation) {
-                LazyLocation l = (LazyLocation) location;
-                IndexedRegion region = l.mRegion;
+            if (location instanceof DocumentLocation) {
+                DocumentLocation customLocation = (DocumentLocation) location;
+                IndexedRegion region = customLocation.getRegion();
                 if (region instanceof Node) {
                     Node node = (Node) region;
                     if (node instanceof Attr) {
@@ -492,7 +362,9 @@ public class EclipseLintClient extends LintClient {
 
     @Override
     @Nullable
-    public File findResource(@NonNull String relativePath) {
+    public File findResource(String relativePath) {
+    	if (relativePath == null)
+    		relativePath = "";
         // Look within the $ANDROID_SDK
         String sdkFolder = AdtPrefs.getPrefs().getOsSdkFolder();
         if (sdkFolder != null) {
@@ -501,300 +373,110 @@ public class EclipseLintClient extends LintClient {
                 return file;
             }
         }
-
         return null;
     }
 
-    /**
-     * Clears any lint markers from the given resource (project, folder or file)
-     *
-     * @param resource the resource to remove markers from
-     */
-    public static void clearMarkers(@NonNull IResource resource) {
-        clearMarkers(Collections.singletonList(resource));
-    }
-
-    /** Clears any lint markers from the given list of resource (project, folder or file) */
-    static void clearMarkers(List<? extends IResource> resources) {
-        for (IResource resource : resources) {
-            try {
-                if (resource.isAccessible()) {
-                    resource.deleteMarkers(MARKER_LINT, false, IResource.DEPTH_INFINITE);
-                }
-            } catch (CoreException e) {
-                AndmoreAndroidPlugin.log(e, null);
-            }
-        }
-
-        IEditorPart activeEditor = AdtUtils.getActiveEditor();
-        LayoutEditorDelegate delegate = LayoutEditorDelegate.fromEditor(activeEditor);
-        if (delegate != null) {
-            delegate.getGraphicalEditor().getLayoutActionBar().updateErrorIndicator();
-        }
-    }
-
-    /**
-     * Removes all markers of the given id from the given resource.
-     *
-     * @param resource the resource to remove markers from (file or project, or
-     *            null for all open projects)
-     * @param id the id for the issue whose markers should be deleted
-     */
-    public static void removeMarkers(IResource resource, String id) {
-        if (resource == null) {
-            IJavaProject[] androidProjects = BaseProjectHelper.getAndroidProjects(null);
-            for (IJavaProject project : androidProjects) {
-                IProject p = project.getProject();
-                if (p != null) {
-                    // Recurse, but with a different parameter so it will not continue recursing
-                    removeMarkers(p, id);
-                }
-            }
-            return;
-        }
-        IMarker[] markers = getMarkers(resource);
-        for (IMarker marker : markers) {
-            if (id.equals(getId(marker))) {
-                try {
-                    marker.delete();
-                } catch (CoreException e) {
-                    AndmoreAndroidPlugin.log(e, null);
-                }
-            }
-        }
-    }
-
-    /**
-     * Returns the lint marker for the given resource (which may be a project, folder or file)
-     *
-     * @param resource the resource to be checked, typically a source file
-     * @return an array of markers, possibly empty but never null
-     */
-    public static IMarker[] getMarkers(IResource resource) {
-        try {
-            if (resource.isAccessible()) {
-                return resource.findMarkers(MARKER_LINT, false, IResource.DEPTH_INFINITE);
-            }
-        } catch (CoreException e) {
-            AndmoreAndroidPlugin.log(e, null);
-        }
-
-        return new IMarker[0];
-    }
-
-    private static int getMarkerSeverity(Severity severity) {
-        switch (severity) {
-            case INFORMATIONAL:
-                return IMarker.SEVERITY_INFO;
-            case WARNING:
-                return IMarker.SEVERITY_WARNING;
-            case FATAL:
-            case ERROR:
-            default:
-                return IMarker.SEVERITY_ERROR;
-        }
-    }
-
-    private static Pair<Integer, Integer> getRange(IFile file, IDocument doc,
-            Position startPosition, Position endPosition) {
-        int startOffset = startPosition.getOffset();
-        int endOffset = endPosition != null ? endPosition.getOffset() : -1;
-        if (endOffset != -1) {
-            // Attribute ranges often include trailing whitespace; trim this up
-            if (doc == null) {
-                IDocumentProvider provider = new TextFileDocumentProvider();
-                try {
-                    provider.connect(file);
-                    doc = provider.getDocument(file);
-                    if (doc != null) {
-                        return adjustOffsets(doc, startOffset, endOffset);
-                    }
-                } catch (Exception e) {
-                    AndmoreAndroidPlugin.log(e, "Can't find range information for %1$s", file.getName());
-                } finally {
-                    provider.disconnect(file);
-                }
-            } else {
-                return adjustOffsets(doc, startOffset, endOffset);
-            }
-        }
-
-        return Pair.of(startOffset, startOffset);
-    }
-
-    /**
-     * Trim off any trailing space on the given offset range in the given
-     * document, and don't span multiple lines on ranges since it makes (for
-     * example) the XML editor just glow with yellow underlines for all the
-     * attributes etc. Highlighting just the element beginning gets the point
-     * across. It also makes it more obvious where there are warnings on both
-     * the overall element and on individual attributes since without this the
-     * warnings on attributes would just overlap with the whole-element
-     * highlighting.
-     */
-    private static Pair<Integer, Integer> adjustOffsets(IDocument doc, int startOffset,
-            int endOffset) {
-        int originalStart = startOffset;
-        int originalEnd = endOffset;
-
-        if (doc != null) {
-            while (endOffset > startOffset && endOffset < doc.getLength()) {
-                try {
-                    if (!Character.isWhitespace(doc.getChar(endOffset - 1))) {
-                        break;
-                    } else {
-                        endOffset--;
-                    }
-                } catch (BadLocationException e) {
-                    // Pass - we've already validated offset range above
-                    break;
-                }
-            }
-
-            // Also don't span lines
-            int lineEnd = startOffset;
-            while (lineEnd < endOffset) {
-                try {
-                    char c = doc.getChar(lineEnd);
-                    if (c == '\n' || c == '\r') {
-                        endOffset = lineEnd;
-                        if (endOffset > 0 && doc.getChar(endOffset - 1) == '\r') {
-                            endOffset--;
-                        }
-                        break;
-                    }
-                } catch (BadLocationException e) {
-                    // Pass - we've already validated offset range above
-                    break;
-                }
-                lineEnd++;
-            }
-        }
-
-        if (startOffset >= endOffset) {
-            // Selecting nothing (for example, for the mangled CRLF delimiter issue selecting
-            // just the newline)
-            // In that case, use the real range
-            return Pair.of(originalStart, originalEnd);
-        }
-
-        return Pair.of(startOffset, endOffset);
-    }
-
-    /**
-     * Returns true if a fatal error was encountered
-     *
-     * @return true if a fatal error was encountered
-     */
-    public boolean hasFatalErrors() {
-        return mWasFatal;
-    }
-
-    /**
-     * Describe the issue for the given marker
-     *
-     * @param marker the marker to look up
-     * @return a full description of the corresponding issue, never null
-     */
-    public static String describe(IMarker marker) {
-        IssueRegistry registry = getRegistry();
-        String markerId = getId(marker);
-        Issue issue = registry.getIssue(markerId);
-        if (issue == null) {
-            return "";
-        }
-
-        String summary = issue.getBriefDescription(TextFormat.TEXT);
-        String explanation = issue.getExplanation(TextFormat.TEXT);
-
-        StringBuilder sb = new StringBuilder(summary.length() + explanation.length() + 20);
-        try {
-            sb.append((String) marker.getAttribute(IMarker.MESSAGE));
-            sb.append('\n').append('\n');
-        } catch (CoreException e) {
-        }
-        sb.append("Issue: ");
-        sb.append(summary);
-        sb.append('\n');
-        sb.append("Id: ");
-        sb.append(issue.getId());
-        sb.append('\n').append('\n');
-        sb.append(explanation);
-
-        if (issue.getMoreInfo() != null) {
-            sb.append('\n').append('\n');
-            sb.append(issue.getMoreInfo());
-        }
-
-        return sb.toString();
-    }
-
-    /**
-     * Returns the id for the given marker
-     *
-     * @param marker the marker to look up
-     * @return the corresponding issue id, or null
-     */
-    public static String getId(IMarker marker) {
-        try {
-            return (String) marker.getAttribute(MARKER_CHECKID_PROPERTY);
-        } catch (CoreException e) {
+    @Override
+    @Nullable
+    public String getSuperClass(@NonNull Project project, @NonNull String name) {
+        if (!mSearchForSuperClasses) {
+            // Super type search using the Eclipse index is potentially slow, so
+            // only do this when necessary
             return null;
         }
-    }
-
-    /**
-     * Shows the given marker in the editor
-     *
-     * @param marker the marker to be shown
-     */
-    public static void showMarker(IMarker marker) {
-        IRegion region = null;
+        IProject eclipseProject = getProject(project);
+        if (eclipseProject == null) {
+            return null;
+        }
         try {
-            int start = marker.getAttribute(IMarker.CHAR_START, -1);
-            int end = marker.getAttribute(IMarker.CHAR_END, -1);
-            if (start >= 0 && end >= 0) {
-                region = new org.eclipse.jface.text.Region(start, end - start);
+            IJavaProject javaProject = BaseProjectHelper.getJavaProject(eclipseProject);
+            if (javaProject == null) {
+                return null;
             }
 
-            IResource resource = marker.getResource();
-            if (resource instanceof IFile) {
-                IEditorPart editor =
-                        AndmoreAndroidPlugin.openFile((IFile) resource, region, true /* showEditorTab */);
-                if (editor != null) {
-                    IDE.gotoMarker(editor, marker);
+            String typeFqcn = ClassContext.getFqcn(name);
+            IType type = javaProject.findType(typeFqcn);
+            if (type != null) {
+                ITypeHierarchy hierarchy = type.newSupertypeHierarchy(new NullProgressMonitor());
+                IType superType = hierarchy.getSuperclass(type);
+                if (superType != null) {
+                    String key = superType.getKey();
+                    if (!key.isEmpty()
+                            && key.charAt(0) == 'L'
+                            && key.charAt(key.length() - 1) == ';') {
+                        return key.substring(1, key.length() - 1);
+                    } else {
+                        String fqcn = superType.getFullyQualifiedName();
+                        return ClassContext.getInternalName(fqcn);
+                    }
                 }
             }
-        } catch (PartInitException ex) {
-            AndmoreAndroidPlugin.log(ex, null);
+        } catch (JavaModelException e) {
+            log(Severity.INFORMATIONAL, e, null);
+        } catch (CoreException e) {
+            log(Severity.INFORMATIONAL, e, null);
         }
-    }
-
-    /**
-     * Show a dialog with errors for the given file
-     *
-     * @param shell the parent shell to attach the dialog to
-     * @param file the file to show the errors for
-     * @param editor the editor for the file, if known
-     */
-    public static void showErrors(
-            @NonNull Shell shell,
-            @NonNull IFile file,
-            @Nullable IEditorPart editor) {
-        LintListDialog dialog = new LintListDialog(shell, file, editor);
-        dialog.open();
+        return null;
     }
 
     @Override
-    public @NonNull String readFile(@NonNull File f) {
+    @Nullable
+    public Boolean isSubclassOf(
+            Project project,
+            String name, 
+            String superClassName) {
+        if (!mSearchForSuperClasses) {
+            // Super type search using the Eclipse index is potentially slow, so
+            // only do this when necessary
+            return null;
+        }
+        if ((project == null) || (name == null) || (superClassName == null))
+        	return null;
+        IProject eclipseProject = getProject(project);
+        if (eclipseProject == null) {
+            return null;
+        }
+
+        try {
+            IJavaProject javaProject = BaseProjectHelper.getJavaProject(eclipseProject);
+            if (javaProject == null) {
+                return null;
+            }
+
+            String typeFqcn = ClassContext.getFqcn(name);
+            IType type = javaProject.findType(typeFqcn);
+            if (type != null) {
+                ITypeHierarchy hierarchy = type.newSupertypeHierarchy(new NullProgressMonitor());
+                IType[] allSupertypes = hierarchy.getAllSuperclasses(type);
+                if (allSupertypes != null) {
+                    String target = 'L' + superClassName + ';';
+                    for (IType superType : allSupertypes) {
+                        if (target.equals(superType.getKey())) {
+                            return Boolean.TRUE;
+                        }
+                    }
+                    return Boolean.FALSE;
+                }
+            }
+        } catch (JavaModelException e) {
+            log(Severity.INFORMATIONAL, e, null);
+        } catch (CoreException e) {
+            log(Severity.INFORMATIONAL, e, null);
+        }
+        return null;
+    }
+    
+    @Override
+    public @NonNull CharSequence readFile(File f) {
+    	if (f == null)
+    		return "";
         // Map File to IFile
         IFile file = AdtUtils.fileToIFile(f);
         if (file == null || !file.exists()) {
             String path = f.getPath();
             AndmoreAndroidPlugin.log(IStatus.ERROR, "Can't find file %1$s in workspace", path);
-            return readPlainFile(f);
+            return super.readFile(f);
         }
-
         if (SdkUtils.endsWithIgnoreCase(file.getName(), DOT_XML)) {
             IStructuredModel model = null;
             try {
@@ -812,19 +494,19 @@ public class EclipseLintClient extends LintClient {
                 }
             }
         }
-
-        return readPlainFile(f);
+        return super.readFile(f);
     }
 
-    private String readPlainFile(File file) {
-        try {
-            return (String) LintUtils.getEncodedString(this, file,  true);
-        } catch (IOException e) {
-            return ""; //$NON-NLS-1$
+    @Override
+    @NonNull
+    public IAndroidTarget[] getTargets() {
+        Sdk sdk = Sdk.getCurrent();
+        if (sdk != null) {
+            return sdk.getTargets().toArray(new IAndroidTarget[0]);
+        } else {
+            return new IAndroidTarget[0];
         }
     }
-
-    private Map<Project, ClassPathInfo> mProjectInfo;
 
     @Override
     @NonNull
@@ -836,7 +518,6 @@ public class EclipseLintClient extends LintClient {
         } else {
             info = mProjectInfo.get(project);
         }
-
         if (info == null) {
             List<File> sources = null;
             List<File> classes = null;
@@ -915,7 +596,6 @@ public class EclipseLintClient extends LintClient {
                     AndmoreAndroidPlugin.log(e, null);
                 }
             }
-
             if (sources == null) {
                 sources = super.getClassPath(project).getSourceFolders();
             }
@@ -932,460 +612,292 @@ public class EclipseLintClient extends LintClient {
             List<File> libraries, 
             List<File> nonProvidedLibraries, 
             List<File> testFolders, 
-            List<File> testLibraries)
+            List<File> testLibraries,
+            List<File> generatedFolders)
      */
-            info = new ClassPathInfo(sources, classes, libraries, libraries, null, null);
+            info = new ClassPathInfo(sources, classes, libraries, libraries, EMPTY_FILE_LIST, EMPTY_FILE_LIST, EMPTY_FILE_LIST);
             mProjectInfo.put(project, info);
         }
 
         return info;
     }
-
-    /**
-     * Returns the registry of issues to check from within Eclipse.
+    
+	/**
+     * Clears any lint markers from the given resource (project, folder or file)
      *
-     * @return the issue registry to use to access detectors and issues
+     * @param resource the resource to remove markers from
      */
-    public static IssueRegistry getRegistry() {
-        return new BuiltinIssueRegistry();
+    public static void clearMarkers(@NonNull IResource resource) {
+        clearMarkers(Collections.singletonList(resource));
     }
 
-    @Override
-    public @NonNull Class<? extends Detector> replaceDetector(
-            @NonNull Class<? extends Detector> detectorClass) {
-        return detectorClass;
-    }
-
-    @Override
-    @NonNull
-    public IAndroidTarget[] getTargets() {
-        Sdk sdk = Sdk.getCurrent();
-        if (sdk != null) {
-            return sdk.getTargets().toArray(new IAndroidTarget[0]);
-        } else {
-            return new IAndroidTarget[0];
+    /** Clears any lint markers from the given list of resource (project, folder or file) */
+    public static void clearMarkers(List<? extends IResource> resources) {
+        for (IResource resource : resources) {
+            try {
+                if (resource.isAccessible()) {
+                    resource.deleteMarkers(MARKER_LINT, false, IResource.DEPTH_INFINITE);
+                }
+            } catch (CoreException e) {
+                AndmoreAndroidPlugin.log(e, null);
+            }
+        }
+        IEditorPart activeEditor = AdtUtils.getActiveEditor();
+        LayoutEditorDelegate delegate = LayoutEditorDelegate.fromEditor(activeEditor);
+        if (delegate != null) {
+            delegate.getGraphicalEditor().getLayoutActionBar().updateErrorIndicator();
         }
     }
 
-    private boolean mSearchForSuperClasses;
-
     /**
-     * Sets whether this client should search for super types on its own. This
-     * is typically not needed when doing a full lint run (because lint will
-     * look at all classes and libraries), but is useful during incremental
-     * analysis when lint is only looking at a subset of classes. In that case,
-     * we want to use Eclipse's data structures for super classes.
+     * Removes all markers of the given id from the given resource.
      *
-     * @param search whether to use a custom Eclipse search for super class
-     *            names
+     * @param resource the resource to remove markers from (file or project, or
+     *            null for all open projects)
+     * @param id the id for the issue whose markers should be deleted
      */
-    public void setSearchForSuperClasses(boolean search) {
-        mSearchForSuperClasses = search;
+    public static void removeMarkers(IResource resource, String id) {
+        if (resource == null) {
+            IJavaProject[] androidProjects = BaseProjectHelper.getAndroidProjects(null);
+            for (IJavaProject project : androidProjects) {
+                IProject p = project.getProject();
+                if (p != null) {
+                    // Recurse, but with a different parameter so it will not continue recursing
+                    removeMarkers(p, id);
+                }
+            }
+            return;
+        }
+        IMarker[] markers = getMarkers(resource);
+        for (IMarker marker : markers) {
+            if (id.equals(getId(marker))) {
+                try {
+                    marker.delete();
+                } catch (CoreException e) {
+                    AndmoreAndroidPlugin.log(e, null);
+                }
+            }
+        }
     }
 
     /**
-     * Whether this lint client is searching for super types. See
-     * {@link #setSearchForSuperClasses(boolean)} for details.
+     * Returns the lint marker for the given resource (which may be a project, folder or file)
      *
-     * @return whether the client will search for super types
+     * @param resource the resource to be checked, typically a source file
+     * @return an array of markers, possibly empty but never null
      */
-    public boolean getSearchForSuperClasses() {
-        return mSearchForSuperClasses;
-    }
-
-    @Override
-    @Nullable
-    public String getSuperClass(@NonNull Project project, @NonNull String name) {
-        if (!mSearchForSuperClasses) {
-            // Super type search using the Eclipse index is potentially slow, so
-            // only do this when necessary
-            return null;
-        }
-
-        IProject eclipseProject = getProject(project);
-        if (eclipseProject == null) {
-            return null;
-        }
-
+    public static IMarker[] getMarkers(IResource resource) {
         try {
-            IJavaProject javaProject = BaseProjectHelper.getJavaProject(eclipseProject);
-            if (javaProject == null) {
-                return null;
+            if (resource.isAccessible()) {
+                return resource.findMarkers(MARKER_LINT, false, IResource.DEPTH_INFINITE);
+            }
+        } catch (CoreException e) {
+            AndmoreAndroidPlugin.log(e, null);
+        }
+        return new IMarker[0];
+    }
+
+    /**
+     * Describe the issue for the given marker
+     *
+     * @param marker the marker to look up
+     * @return a full description of the corresponding issue, never null
+     */
+    public static String describe(IMarker marker) {
+        IssueRegistry registry = getRegistry();
+        String markerId = getId(marker);
+        Issue issue = registry.getIssue(markerId);
+        if (issue == null) {
+            return "";
+        }
+
+        String summary = issue.getBriefDescription(TextFormat.TEXT);
+        String explanation = issue.getExplanation(TextFormat.TEXT);
+
+        StringBuilder sb = new StringBuilder(summary.length() + explanation.length() + 20);
+        try {
+            sb.append((String) marker.getAttribute(IMarker.MESSAGE));
+            sb.append('\n').append('\n');
+        } catch (CoreException e) {
+        }
+        sb.append("Issue: ");
+        sb.append(summary);
+        sb.append('\n');
+        sb.append("Id: ");
+        sb.append(issue.getId());
+        sb.append('\n').append('\n');
+        sb.append(explanation);
+
+        if (issue.getMoreInfo() != null) {
+            sb.append('\n').append('\n');
+            sb.append(issue.getMoreInfo());
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Returns the id for the given marker
+     *
+     * @param marker the marker to look up
+     * @return the corresponding issue id, or null
+     */
+    public static String getId(IMarker marker) {
+        try {
+            return (String) marker.getAttribute(MARKER_CHECKID_PROPERTY);
+        } catch (CoreException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Shows the given marker in the editor
+     *
+     * @param marker the marker to be shown
+     */
+    public static void showMarker(IMarker marker) {
+        IRegion region = null;
+        try {
+            int start = marker.getAttribute(IMarker.CHAR_START, -1);
+            int end = marker.getAttribute(IMarker.CHAR_END, -1);
+            if (start >= 0 && end >= 0) {
+                region = new org.eclipse.jface.text.Region(start, end - start);
             }
 
-            String typeFqcn = ClassContext.getFqcn(name);
-            IType type = javaProject.findType(typeFqcn);
-            if (type != null) {
-                ITypeHierarchy hierarchy = type.newSupertypeHierarchy(new NullProgressMonitor());
-                IType superType = hierarchy.getSuperclass(type);
-                if (superType != null) {
-                    String key = superType.getKey();
-                    if (!key.isEmpty()
-                            && key.charAt(0) == 'L'
-                            && key.charAt(key.length() - 1) == ';') {
-                        return key.substring(1, key.length() - 1);
+            IResource resource = marker.getResource();
+            if (resource instanceof IFile) {
+                IEditorPart editor =
+                        AndmoreAndroidPlugin.openFile((IFile) resource, region, true /* showEditorTab */);
+                if (editor != null) {
+                    IDE.gotoMarker(editor, marker);
+                }
+            }
+        } catch (PartInitException ex) {
+            AndmoreAndroidPlugin.log(ex, null);
+        }
+    }
+
+    private IProject getProject(Project project) {
+        if (project == mLastLintProject) {
+            return mLastEclipseProject;
+        }
+        mLastLintProject = project;
+        mLastEclipseProject = null;
+
+        if (mResources != null) {
+            if (mResources.size() == 1) {
+                IProject p = mResources.get(0).getProject();
+                mLastEclipseProject = p;
+                return p;
+            }
+            IProject last = null;
+            for (IResource resource : mResources) {
+                IProject p = resource.getProject();
+                if (p != last) {
+                    if (project.getDir().equals(AdtUtils.getAbsolutePath(p).toFile())) {
+                        mLastEclipseProject = p;
+                        return p;
+                    }
+                    last = p;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static int getMarkerSeverity(Severity severity) {
+        switch (severity) {
+            case INFORMATIONAL:
+                return IMarker.SEVERITY_INFO;
+            case WARNING:
+                return IMarker.SEVERITY_WARNING;
+            case FATAL:
+            case ERROR:
+            default:
+                return IMarker.SEVERITY_ERROR;
+        }
+    }
+
+    private static Pair<Integer, Integer> getRange(IFile file, IDocument doc,
+            Position startPosition, Position endPosition) {
+        int startOffset = startPosition.getOffset();
+        int endOffset = endPosition != null ? endPosition.getOffset() : -1;
+        if (endOffset != -1) {
+            // Attribute ranges often include trailing whitespace; trim this up
+            if (doc == null) {
+                IDocumentProvider provider = new TextFileDocumentProvider();
+                try {
+                    provider.connect(file);
+                    doc = provider.getDocument(file);
+                    if (doc != null) {
+                        return adjustOffsets(doc, startOffset, endOffset);
+                    }
+                } catch (Exception e) {
+                    AndmoreAndroidPlugin.log(e, "Can't find range information for %1$s", file.getName());
+                } finally {
+                    provider.disconnect(file);
+                }
+            } else {
+                return adjustOffsets(doc, startOffset, endOffset);
+            }
+        }
+
+        return Pair.of(startOffset, startOffset);
+    }
+
+    /**
+     * Trim off any trailing space on the given offset range in the given
+     * document, and don't span multiple lines on ranges since it makes (for
+     * example) the XML editor just glow with yellow underlines for all the
+     * attributes etc. Highlighting just the element beginning gets the point
+     * across. It also makes it more obvious where there are warnings on both
+     * the overall element and on individual attributes since without this the
+     * warnings on attributes would just overlap with the whole-element
+     * highlighting.
+     */
+    private static Pair<Integer, Integer> adjustOffsets(IDocument doc, int startOffset,
+            int endOffset) {
+        int originalStart = startOffset;
+        int originalEnd = endOffset;
+
+        if (doc != null) {
+            while (endOffset > startOffset && endOffset < doc.getLength()) {
+                try {
+                    if (!Character.isWhitespace(doc.getChar(endOffset - 1))) {
+                        break;
                     } else {
-                        String fqcn = superType.getFullyQualifiedName();
-                        return ClassContext.getInternalName(fqcn);
+                        endOffset--;
                     }
+                } catch (BadLocationException e) {
+                    // Pass - we've already validated offset range above
+                    break;
                 }
             }
-        } catch (JavaModelException e) {
-            log(Severity.INFORMATIONAL, e, null);
-        } catch (CoreException e) {
-            log(Severity.INFORMATIONAL, e, null);
-        }
-
-        return null;
-    }
-
-    @Override
-    @Nullable
-    public Boolean isSubclassOf(
-            @NonNull Project project,
-            @NonNull String name, @NonNull
-            String superClassName) {
-        if (!mSearchForSuperClasses) {
-            // Super type search using the Eclipse index is potentially slow, so
-            // only do this when necessary
-            return null;
-        }
-
-        IProject eclipseProject = getProject(project);
-        if (eclipseProject == null) {
-            return null;
-        }
-
-        try {
-            IJavaProject javaProject = BaseProjectHelper.getJavaProject(eclipseProject);
-            if (javaProject == null) {
-                return null;
-            }
-
-            String typeFqcn = ClassContext.getFqcn(name);
-            IType type = javaProject.findType(typeFqcn);
-            if (type != null) {
-                ITypeHierarchy hierarchy = type.newSupertypeHierarchy(new NullProgressMonitor());
-                IType[] allSupertypes = hierarchy.getAllSuperclasses(type);
-                if (allSupertypes != null) {
-                    String target = 'L' + superClassName + ';';
-                    for (IType superType : allSupertypes) {
-                        if (target.equals(superType.getKey())) {
-                            return Boolean.TRUE;
-                        }
-                    }
-                    return Boolean.FALSE;
-                }
-            }
-        } catch (JavaModelException e) {
-            log(Severity.INFORMATIONAL, e, null);
-        } catch (CoreException e) {
-            log(Severity.INFORMATIONAL, e, null);
-        }
-
-        return null;
-    }
-
-    private static class LazyLocation extends Location /*implements Location.Handle*/ {
-        private final IStructuredDocument mDocument;
-        private final IndexedRegion mRegion;
-        private Position mStart;
-        private Position mEnd;
-
-        public LazyLocation(File file, IStructuredDocument document, IndexedRegion region) {
-            super(file, null /*start*/, null /*end*/);
-            mDocument = document;
-            mRegion = region;
-        }
-
-        public Handle getHandle()
-        {
-            return new Handle(){
-
-                private Object mClientData;
-
-                @Override
-                public Location resolve()
-                {
-                    return LazyLocation.this;
-                }
-
-                @Override
-                public void setClientData(@Nullable Object clientData) {
-                    mClientData = clientData;
-                }
-
-                @Override
-                @Nullable
-                public Object getClientData() {
-                    return mClientData;
-                }
-            };
-        }
-
-
-
-        @Override
-        public Position getStart() {
-            if (mStart == null) {
-                int line = -1;
-                int column = -1;
-                int offset = mRegion.getStartOffset();
-
-                if (mRegion instanceof org.w3c.dom.Text && mDocument != null) {
-                    // For text nodes, skip whitespace prefix, if any
-                    for (int i = offset;
-                            i < mRegion.getEndOffset() && i < mDocument.getLength(); i++) {
-                        try {
-                            char c = mDocument.getChar(i);
-                            if (!Character.isWhitespace(c)) {
-                                offset = i;
-                                break;
-                            }
-                        } catch (BadLocationException e) {
-                            break;
-                        }
-                    }
-                }
-
-                if (mDocument != null && offset < mDocument.getLength()) {
-                    line = mDocument.getLineOfOffset(offset);
-                    column = -1;
-                    try {
-                        int lineOffset = mDocument.getLineOffset(line);
-                        column = offset - lineOffset;
-                    } catch (BadLocationException e) {
-                        AndmoreAndroidPlugin.log(e, null);
-                    }
-                }
-
-                mStart = new DefaultPosition(line, column, offset);
-            }
-
-            return mStart;
-        }
-
-        @Override
-        public Position getEnd() {
-            if (mEnd == null) {
-                mEnd = new DefaultPosition(-1, -1, mRegion.getEndOffset());
-            }
-
-            return mEnd;
-        }
-
-        //@Override
-        //public @NonNull Location resolve() {
-        //    return this;
-        //}
-    }
-
-    private static class EclipseJavaParser extends JavaParser {
-        private static final boolean USE_ECLIPSE_PARSER = true;
-        private final Parser mParser;
-
-        EclipseJavaParser() {
-            if (USE_ECLIPSE_PARSER) {
-                CompilerOptions options = new CompilerOptions();
-                // Always using JDK 7 rather than basing it on project metadata since we
-                // don't do compilation error validation in lint (we leave that to the IDE's
-                // error parser or the command line build's compilation step); we want an
-                // AST that is as tolerant as possible.
-                options.complianceLevel = ClassFileConstants.JDK1_7;
-                options.sourceLevel = ClassFileConstants.JDK1_7;
-                options.targetJDK = ClassFileConstants.JDK1_7;
-                options.parseLiteralExpressionsAsConstants = true;
-                ProblemReporter problemReporter = new ProblemReporter(
-                        DefaultErrorHandlingPolicies.exitOnFirstError(),
-                        options,
-                        new DefaultProblemFactory());
-                mParser = new Parser(problemReporter, options.parseLiteralExpressionsAsConstants);
-                mParser.javadocParser.checkDocComment = false;
-            } else {
-                mParser = null;
-            }
-        }
-
-        @Override
-        public boolean prepareJavaParse(@NonNull List<JavaContext> contexts) {
-            return true;
-            // TODO: Use batch compiler from lint-cli.jar
-        }
-
-        @Override
-        public lombok.ast.Node parseJava(@NonNull JavaContext context) {
-            if (USE_ECLIPSE_PARSER) {
-                // Use Eclipse's compiler
-                EcjTreeConverter converter = new EcjTreeConverter();
-                String code = (String) context.getContents();
-
-                CompilationUnit sourceUnit = new CompilationUnit(code.toCharArray(),
-                        context.file.getName(), "UTF-8"); //$NON-NLS-1$
-                CompilationResult compilationResult = new CompilationResult(sourceUnit, 0, 0, 0);
-                CompilationUnitDeclaration unit = null;
+            // Also don't span lines
+            int lineEnd = startOffset;
+            while (lineEnd < endOffset) {
                 try {
-                    unit = mParser.parse(sourceUnit, compilationResult);
-                } catch (AbortCompilation e) {
-                    // No need to report Java parsing errors while running in Eclipse.
-                    // Eclipse itself will already provide problem markers for these files,
-                    // so all this achieves is creating "multiple annotations on this line"
-                    // tooltips instead.
-                    return null;
-                }
-                if (unit == null) {
-                    return null;
-                }
-
-                try {
-                    converter.visit(code, unit);
-                    List<? extends lombok.ast.Node> nodes = converter.getAll();
-
-                    // There could be more than one node when there are errors; pick out the
-                    // compilation unit node
-                    for (lombok.ast.Node node : nodes) {
-                        if (node instanceof lombok.ast.CompilationUnit) {
-                            return node;
+                    char c = doc.getChar(lineEnd);
+                    if (c == '\n' || c == '\r') {
+                        endOffset = lineEnd;
+                        if (endOffset > 0 && doc.getChar(endOffset - 1) == '\r') {
+                            endOffset--;
                         }
+                        break;
                     }
-
-                    return null;
-                } catch (Throwable t) {
-                    AndmoreAndroidPlugin.log(t, "Failed converting ECJ parse tree to Lombok for file %1$s",
-                            context.file.getPath());
-                    return null;
+                } catch (BadLocationException e) {
+                    // Pass - we've already validated offset range above
+                    break;
                 }
-            } else {
-                // Use Lombok for now
-                Source source = new Source((String) context.getContents(), context.file.getName());
-                List<lombok.ast.Node> nodes = source.getNodes();
-
-                // Don't analyze files containing errors
-                List<ParseProblem> problems = source.getProblems();
-                if (problems != null && problems.size() > 0) {
-                    /* Silently ignore the errors. There are still some bugs in Lombok/Parboiled
-                     * (triggered if you run lint on the AOSP framework directory for example),
-                     * and having these show up as fatal errors when it's really a tool bug
-                     * is bad. To make matters worse, the error messages aren't clear:
-                     * http://code.google.com/p/projectlombok/issues/detail?id=313
-                    for (ParseProblem problem : problems) {
-                        lombok.ast.Position position = problem.getPosition();
-                        Location location = Location.create(context.file,
-                                context.getContents(), position.getStart(), position.getEnd());
-                        String message = problem.getMessage();
-                        context.report(
-                                IssueRegistry.PARSER_ERROR, location,
-                                message,
-                                null);
-
-                    }
-                    */
-                    return null;
-                }
-
-                // There could be more than one node when there are errors; pick out the
-                // compilation unit node
-                for (lombok.ast.Node node : nodes) {
-                    if (node instanceof lombok.ast.CompilationUnit) {
-                        return node;
-                    }
-                }
-                return null;
+                lineEnd++;
             }
         }
-
-        @Override
-        public @NonNull Location getLocation(@NonNull JavaContext context,
-                @NonNull lombok.ast.Node node) {
-            lombok.ast.Position position = node.getPosition();
-            return Location.create(context.file, context.getContents(),
-                    position.getStart(), position.getEnd());
+       if (startOffset >= endOffset) {
+            // Selecting nothing (for example, for the mangled CRLF delimiter issue selecting
+            // just the newline)
+            // In that case, use the real range
+            return Pair.of(originalStart, originalEnd);
         }
-
-        @Override
-        public @NonNull Handle createLocationHandle(@NonNull JavaContext context,
-                @NonNull lombok.ast.Node node) {
-            return new LocationHandle(context.file, node);
-        }
-
-        @Override
-        public void dispose(@NonNull JavaContext context,
-                @NonNull lombok.ast.Node compilationUnit) {
-        }
-
-        @Override
-        @Nullable
-        public ResolvedNode resolve(@NonNull JavaContext context,
-                @NonNull lombok.ast.Node node) {
-            return null;
-        }
-
-        @Override
-        @Nullable
-        public TypeDescriptor getType(@NonNull JavaContext context,
-                @NonNull lombok.ast.Node node) {
-            return null;
-        }
-
-        @Override
-        public Location getRangeLocation(JavaContext context, lombok.ast.Node from, int fromDelta, lombok.ast.Node to,
-                int toDelta) {
-            String contents = (String) context.getContents();
-            int start = Math.max(0,  from.getPosition().getStart() + fromDelta);
-            int end = Math.max(contents == null ? Integer.MAX_VALUE : contents.length(), to.getPosition().getEnd() + toDelta);
-            return Location.create(context.file, contents, start, end);
-        }
-
-         private class LocationHandle implements Handle {
-            private File mFile;
-            private lombok.ast.Node mNode;
-            private Object mClientData;
-
-            public LocationHandle(File file, lombok.ast.Node node) {
-                mFile = file;
-                mNode = node;
-            }
-
-            @Override
-            public @NonNull Location resolve() {
-                lombok.ast.Position pos = mNode.getPosition();
-                return Location.create(mFile, null /*contents*/, pos.getStart(), pos.getEnd());
-            }
-
-            @Override
-            public void setClientData(@Nullable Object clientData) {
-                mClientData = clientData;
-            }
-
-            @Override
-            @Nullable
-            public Object getClientData() {
-                return mClientData;
-            }
-        }
-
-        @Override
-        public PsiElement findElementAt(JavaContext arg0, int arg1)
-        {
-            return null;
-        }
-
-        @Override
-        public JavaEvaluator getEvaluator()
-        {
-            return null;
-        }
-
-        @Override
-        public File getFile(PsiFile arg0)
-        {
-            return null;
-        }
-
-        @Override
-        public PsiJavaFile parseJavaToPsi(JavaContext arg0)
-        {
-            return null;
-        }
+       return Pair.of(startOffset, endOffset);
     }
 }
 

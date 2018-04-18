@@ -1,4 +1,5 @@
-@@ -2 +2
+@@ -1 +1
+- <?xml version="1.0" encoding="utf-8"?>
 - <LinearLayout android:id="@+id/LinearLayout2" xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
 -     <Button android:text="FirstButton" android:id="@+id/button1" android:layout_width="wrap_content" android:layout_height="wrap_content"></Button>
 -     <LinearLayout android:layout_height="wrap_content" android:id="@+id/linearLayout4" android:layout_width="match_parent">
@@ -13,6 +14,12 @@
 -         <Button android:text="SecondButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:id="@+id/button2"></Button>
 -         <Button android:text="ThirdButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:id="@+id/button3"></Button>
 -         <CheckBox android:id="@+id/checkBox1" android:text="CheckBox" android:layout_width="wrap_content" android:layout_height="wrap_content"></CheckBox>
+-     </LinearLayout>
+-     <Button android:layout_height="wrap_content" android:text="FourthButton" android:id="@+id/button4" android:layout_width="match_parent"></Button>
+- </LinearLayout>
+-
+@@ -20 +1
++ <?xml version="1.0" encoding="utf-8"?>
 + <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
 +     android:id="@+id/LinearLayout2"
 +     android:layout_width="match_parent"
@@ -57,10 +64,8 @@
 +             android:layout_height="wrap_content"
 +             android:text="CheckBox" >
 +         </CheckBox>
-@@ -17 +47
--     <Button android:layout_height="wrap_content" android:text="FourthButton" android:id="@+id/button4" android:layout_width="match_parent"></Button>
-- </LinearLayout>
-@@ -20 +48
++     </LinearLayout>
++
 +     <Button
 +         android:id="@+id/button4"
 +         android:layout_width="match_parent"

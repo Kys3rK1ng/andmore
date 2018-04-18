@@ -16,8 +16,8 @@
 
 package org.eclipse.andmore.internal.editors.layout.refactoring;
 
-import com.android.ide.common.resources.ResourceUrl;
 import com.android.resources.ResourceType;
+import com.android.resources.ResourceUrl;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.andmore.internal.editors.AndroidXmlEditor;

@@ -17,6 +17,7 @@
 package org.eclipse.andmore.internal.editors.manifest.model;
 
 import com.android.SdkConstants;
+import com.android.annotations.Nullable;
 import com.android.xml.AndroidManifest;
 
 import org.eclipse.andmore.AndmoreAndroidConstants;
@@ -312,7 +313,7 @@ public class UiClassAttributeNode extends UiTextAttributeNode {
                     String javaPackage = getManifestPackage();
 
                     // build the fully qualified name of the class
-                    String className = AndroidManifest.combinePackageAndClassName(
+                    String className = combinePackageAndClassName(
                             javaPackage, textValue);
 
                     // only test the vilibility for activities.
@@ -732,5 +733,43 @@ public class UiClassAttributeNode extends UiTextAttributeNode {
 
         return null;
     }
+
+    /**
+     * Combines a java package, with a class value from the manifest to make a fully qualified
+     * class name
+     *
+     * @param javaPackage the java package from the manifest.
+     * @param className the class name from the manifest.
+     * @return the fully qualified class name.
+     */
+    @Nullable
+    public static String combinePackageAndClassName(
+            @Nullable String javaPackage,
+            @Nullable String className) {
+        if (className == null || className.isEmpty()) {
+            return javaPackage;
+        }
+        if (javaPackage == null || javaPackage.isEmpty()) {
+            return className;
+        }
+
+        // the class name can be a subpackage (starts with a '.'
+        // char), a simple class name (no dot), or a full java package
+        boolean startWithDot = (className.charAt(0) == '.');
+        boolean hasDot = (className.indexOf('.') != -1);
+        if (startWithDot || !hasDot) {
+
+            // add the concatenation of the package and class name
+            if (startWithDot) {
+                return javaPackage + className;
+            } else {
+                return javaPackage + '.' + className;
+            }
+        } else {
+            // just add the class as it should be a fully qualified java name.
+            return className;
+        }
+    }
+
 }
 

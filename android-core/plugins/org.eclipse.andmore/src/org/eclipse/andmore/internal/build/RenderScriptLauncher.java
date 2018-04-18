@@ -17,7 +17,7 @@
 package org.eclipse.andmore.internal.build;
 
 import com.android.annotations.NonNull;
-import com.android.sdklib.build.RenderScriptProcessor.CommandLineLauncher;
+import com.android.sdklib.build.legacy.RenderScriptProcessor.CommandLineLauncher;
 
 import org.eclipse.andmore.AndmoreAndroidConstants;
 import org.eclipse.andmore.AndmoreAndroidPlugin;

@@ -2,19 +2,36 @@
 <classpath>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8"/>
 	<classpathentry kind="con" path="org.eclipse.pde.core.requiredPlugins"/>
-	<classpathentry kind="src" path="src/"/>
-	<classpathentry exported="true" kind="lib" path="libs/annotations-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/common-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/guava-18.0.jar"/>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry exported="true" kind="lib" path="libs/annotations-13.0.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/annotations-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/common-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/commons-compress-1.12.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/ddmlib-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/dvlib-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/FastInfoset-1.2.13.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/gson-2.7.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/guava-22.0.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/httpmime-4.1.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/kxml2-2.3.0.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/layoutlib-api-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/sdklib-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/dvlib-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/sdk-common-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/repository-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/ddmlib-25.3.3.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/istack-commons-runtime-2.21.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/javax.activation-1.2.0.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/jaxb-api-2.2.12-b140109.1041.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/jaxb-core-2.2.11.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/jaxb-runtime-2.2.11.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/jimfs-1.1.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/commons-compress-1.8.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/jsr305-1.3.9.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/kxml2-2.3.0.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/layoutlib-api-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/repository-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/sdk-common-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/sdklib-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/stax-api-1.0-2.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/stax-ex-1.7.7.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/txw2-2.2.11.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/kotlin-reflect-1.2.0.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/kotlin-stdlib-1.2.0.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/kotlin-stdlib-jre7-1.2.0.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/kotlin-stdlib-jre8-1.2.0.jar"/>
+	<classpathentry kind="lib" path="libs/trove4j-20160824.jar"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>

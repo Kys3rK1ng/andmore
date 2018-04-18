@@ -19,6 +19,7 @@ package org.eclipse.andmore.internal.project;
 import static com.android.sdklib.internal.project.ProjectProperties.PROPERTY_SDK;
 
 import com.android.SdkConstants;
+import com.android.ide.common.xml.ManifestData;
 import com.android.sdklib.BuildToolInfo;
 import com.android.sdklib.build.ApkCreationException;
 import com.android.sdklib.build.DuplicateFileException;
@@ -118,8 +119,8 @@ public final class ExportHelper {
                         String.format("%1$s missing.", SdkConstants.FN_ANDROID_MANIFEST_XML)));
             }
 
-            IFileWrapper manifestFile = new IFileWrapper((IFile) manifestResource);
-            boolean debugMode = AndroidManifest.getDebuggable(manifestFile);
+            ManifestData data = AndroidManifestHelper.parseForData((IFile) manifestResource);
+            boolean debugMode = data.getDebuggable();
 
             AndroidPrintStream fakeStream = new AndroidPrintStream(null, null, new OutputStream() {
                 @Override

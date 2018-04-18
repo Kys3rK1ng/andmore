@@ -6,17 +6,23 @@
 	<classpathentry exported="true" kind="lib" path="libs/ninepatch.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/rule-api.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/asset-studio.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/lint-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/lint-api-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/lint-checks-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/lombok-ast-0.2.3.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/propertysheet.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/ant-glob.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/manifest-merger-25.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/builder-2.3.3.jar"/>
-	<classpathentry exported="true" kind="lib" path="libs/uast-162.2228.14.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/asm-6.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/asm-commons-6.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/asm-util-6.1.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/asm-tree-6.1.jar"/>
 	<classpathentry exported="true" kind="lib" path="libs/asm-analysis-6.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/annotations-13.0.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/builder-3.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/gson-2.7.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/intellij-core-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/kotlin-compiler-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/lint-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/lint-api-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/lint-checks-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/lint-kotlin-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/manifest-merger-26.1.1.jar"/>
+	<classpathentry exported="true" kind="lib" path="libs/uast-26.1.1.jar"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>

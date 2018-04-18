@@ -15,7 +15,8 @@
  */
 package org.eclipse.andmore.internal.lint;
 
-import com.android.tools.lint.checks.TypoDetector;
+import com.android.annotations.NonNull;
+import com.android.annotations.Nullable;
 import com.android.tools.lint.detector.api.TextFormat;
 
 import org.eclipse.andmore.AndmoreAndroidPlugin;
@@ -29,6 +30,7 @@ import org.w3c.dom.Node;
 
 import java.util.ArrayList;
 import java.util.List;
+
 
 /** Quickfix for fixing typos */
 @SuppressWarnings("restriction") // DOM model
@@ -59,11 +61,11 @@ final class TypoFix extends DocumentFix {
     protected void apply(IDocument document, IStructuredModel model, Node node,
             int start, int end) {
         String message = mMarker.getAttribute(IMarker.MESSAGE, "");
-        String typo = TypoDetector.getTypo(message, TextFormat.TEXT);
+        String typo = getTypo(message, TextFormat.TEXT);
         if (typo == null) {
             return;
         }
-        List<String> replacements = TypoDetector.getSuggestions(message, TextFormat.TEXT).getReplacements();
+        List<String> replacements = getSuggestions(message, TextFormat.TEXT);
         if (replacements == null || replacements.isEmpty()) {
             return;
         }
@@ -104,8 +106,8 @@ final class TypoFix extends DocumentFix {
     @Override
     protected List<LintFix> getAllFixes() {
         String message = mMarker.getAttribute(IMarker.MESSAGE, "");
-        String typo = TypoDetector.getTypo(message, TextFormat.TEXT);
-        List<String> replacements = TypoDetector.getSuggestions(message, TextFormat.TEXT).getReplacements();
+        String typo = getTypo(message, TextFormat.TEXT);
+        List<String> replacements = getSuggestions(message, TextFormat.TEXT);
         if (replacements != null && !replacements.isEmpty() && typo != null) {
             List<LintFix> allFixes = new ArrayList<LintFix>(replacements.size());
             for (String replacement : replacements) {
@@ -120,4 +122,66 @@ final class TypoFix extends DocumentFix {
 
         return null;
     }
+    /**
+     * Returns the typo word in the error message from this detector
+     *
+     * @param errorMessage the error message produced earlier by this detector
+     * @param format the format of the error message
+     * @return the typo
+     */
+    @Nullable
+    public static String getTypo(@NonNull String errorMessage, @NonNull TextFormat format) {
+        errorMessage = format.toText(errorMessage);
+        // The words are all in quotes
+        int index = errorMessage.indexOf('"');
+        int start = index + 1;
+        index = errorMessage.indexOf('"', start);
+        if (index != -1) {
+            return errorMessage.substring(start, index);
+        }
+
+        return null;
+    }
+
+    /** Returns the suggested replacements and original string, for the given typo.
+     * The error message <b>must</b> be one supplied by lint.
+     *
+     * @param errorMessage the error message
+     * @param format the format of the error message
+     * @return {@link TypoSuggestionInfo}
+     */
+    @NonNull
+    public static List<String> getSuggestions(@NonNull String errorMessage,
+            @NonNull TextFormat format) {
+        errorMessage = format.toText(errorMessage);
+
+        // The words are all in quotes; the first word is the misspelling,
+        // the other words are the suggested replacements
+        List<String> replacements = new ArrayList<>();
+        // Skip the typo
+        int index = errorMessage.indexOf('"');
+        int originalEndIndex = errorMessage.indexOf('"', index + 1);
+        String original = errorMessage.substring(index + 1, originalEndIndex);
+
+        index = originalEndIndex + 1;
+
+        while (true) {
+            index = errorMessage.indexOf('"', index);
+            if (index == -1) {
+                break;
+            }
+            index++;
+            int start = index;
+            index = errorMessage.indexOf('"', index);
+            if (index == -1) {
+                index = errorMessage.length();
+            }
+            replacements.add(errorMessage.substring(start, index));
+            index++;
+        }
+
+        return replacements;
+    }
+
+
 }

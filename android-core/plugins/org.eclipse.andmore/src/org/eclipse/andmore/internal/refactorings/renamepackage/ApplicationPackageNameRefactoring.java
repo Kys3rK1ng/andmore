@@ -21,6 +21,7 @@ import static com.android.SdkConstants.FN_MANIFEST_BASE;
 import static com.android.SdkConstants.FN_RESOURCE_BASE;
 
 import com.android.SdkConstants;
+import com.android.annotations.Nullable;
 import com.android.xml.AndroidManifest;
 
 import org.eclipse.andmore.AndmoreAndroidConstants;
@@ -379,7 +380,7 @@ class ApplicationPackageNameRefactoring extends Refactoring {
                         String package_path = stripQuotes(lastAttrValue);
                         String old_package_name_string = mOldPackageName.getFullyQualifiedName();
 
-                        String absolute_path = AndroidManifest.combinePackageAndClassName(
+                        String absolute_path = combinePackageAndClassName(
                                 old_package_name_string, package_path);
 
                         TextEdit edit = new ReplaceEdit(region.getStartOffset()
@@ -584,4 +585,42 @@ class ApplicationPackageNameRefactoring extends Refactoring {
             return true;
         }
     }
+
+    /**
+     * Combines a java package, with a class value from the manifest to make a fully qualified
+     * class name
+     *
+     * @param javaPackage the java package from the manifest.
+     * @param className the class name from the manifest.
+     * @return the fully qualified class name.
+     */
+    @Nullable
+    public static String combinePackageAndClassName(
+            @Nullable String javaPackage,
+            @Nullable String className) {
+        if (className == null || className.isEmpty()) {
+            return javaPackage;
+        }
+        if (javaPackage == null || javaPackage.isEmpty()) {
+            return className;
+        }
+
+        // the class name can be a subpackage (starts with a '.'
+        // char), a simple class name (no dot), or a full java package
+        boolean startWithDot = (className.charAt(0) == '.');
+        boolean hasDot = (className.indexOf('.') != -1);
+        if (startWithDot || !hasDot) {
+
+            // add the concatenation of the package and class name
+            if (startWithDot) {
+                return javaPackage + className;
+            } else {
+                return javaPackage + '.' + className;
+            }
+        } else {
+            // just add the class as it should be a fully qualified java name.
+            return className;
+        }
+    }
+
 }

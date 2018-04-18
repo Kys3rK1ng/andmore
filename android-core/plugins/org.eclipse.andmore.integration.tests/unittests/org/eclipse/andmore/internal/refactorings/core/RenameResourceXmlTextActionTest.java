@@ -17,7 +17,7 @@ package org.eclipse.andmore.internal.refactorings.core;
 
 import static org.junit.Assert.*;
 
-import com.android.ide.common.resources.ResourceUrl;
+import com.android.resources.ResourceUrl;
 import com.android.resources.ResourceType;
 
 import org.eclipse.jface.text.Document;
@@ -59,7 +59,7 @@ public class RenameResourceXmlTextActionTest  {
     }
 
     private static ResourceUrl getUrl(ResourceType type, String name) {
-        return ResourceUrl.create(type, name, false, false);
+        return ResourceUrl.create(type, name, false);
     }
 
     @Test

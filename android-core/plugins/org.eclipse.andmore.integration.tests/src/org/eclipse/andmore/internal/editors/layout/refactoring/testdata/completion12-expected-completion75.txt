@@ -72,7 +72,7 @@ android:layerType : Specifies the type of layer backing this view.  [enum]
 android:layoutDirection : Defines the direction of layout drawing.  [enum]
 android:textDirection : Defines the direction of the text.  [integer, enum]
 android:textAlignment : Defines the alignment of the text.  [integer, enum]
-android:importantForAccessibility : Controls how this View is important for accessibility which is  if it fires accessibility events and if it is reported to accessibility  services that query the screen.  [integer, enum]
+android:importantForAccessibility : Describes whether or not this view is important for accessibility.  [integer, enum]
 android:accessibilityLiveRegion : Indicates to accessibility services whether the user should be  notified when this view changes.  [integer, enum]
 android:labelFor : Specifies the id of a view for which this view serves as a label  for accessibility purposes.  [reference]
 android:theme : Specifies a theme override for a view.

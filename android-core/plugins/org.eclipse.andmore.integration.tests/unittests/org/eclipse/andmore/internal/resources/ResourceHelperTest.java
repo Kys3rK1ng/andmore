@@ -92,7 +92,7 @@ public class ResourceHelperTest extends TestCase {
             return 0;
         }
     }
-
+/* Requires Workbench now so not appropriate as ordinary JUnit test
     public void testGetIcon() throws Exception {
         // check that the method returns null for an unknown qualifier class
         assertNull(ResourceHelper.getIcon(FakeQualifierClass.class));
@@ -108,7 +108,7 @@ public class ResourceHelperTest extends TestCase {
                     ResourceHelper.getIcon(qual.getClass()));
         }
     }
-
+*/
     public void testGetResourceDeltaKind() {
         assertEquals(ResourceDeltaKind.ADDED,
                 ResourceHelper.getResourceDeltaKind(IResourceDelta.ADDED));

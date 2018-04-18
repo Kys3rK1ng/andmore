@@ -26,6 +26,7 @@ import org.eclipse.andmore.internal.editors.uimodel.IUiUpdateListener;
 import org.eclipse.andmore.internal.editors.uimodel.UiElementNode;
 import org.eclipse.andmore.internal.editors.uimodel.IUiUpdateListener.UiUpdateState;
 import org.eclipse.andmore.internal.sdk.Sdk;
+import org.eclipse.jface.text.TextUtilities;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
@@ -221,7 +222,7 @@ final class ApplicationToggle extends UiElementPart {
                 }
                 mUndoXmlParent.insertBefore(mUndoXmlNode, next);
                 if (next == null) {
-                    Text sep = mUndoXmlDocument.createTextNode(SdkUtils.getLineSeparator());
+                    Text sep = mUndoXmlDocument.createTextNode(System.getProperty("line.separator"));
                     mUndoXmlParent.insertBefore(sep, null);  // insert separator before end tag
                 }
                 success = true;

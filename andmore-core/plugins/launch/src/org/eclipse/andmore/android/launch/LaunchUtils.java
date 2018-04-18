@@ -31,6 +31,7 @@ import org.eclipse.andmore.android.emulator.core.devfrm.DeviceFrameworkManager;
 import org.eclipse.andmore.android.emulator.core.model.IAndroidEmulatorInstance;
 import org.eclipse.andmore.android.emulator.logic.IAndroidLogicInstance;
 import org.eclipse.andmore.android.launch.i18n.LaunchNLS;
+import org.eclipse.andmore.internal.project.AndroidManifestHelper;
 import org.eclipse.andmore.io.IFolderWrapper;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
@@ -158,10 +159,10 @@ public class LaunchUtils {
 
 		// parse the manifest for the list of activities.
 		try {
-			ManifestData manifestParser = AndroidManifestParser.parse(new IFolderWrapper(project));
+			ManifestData manifestData = AndroidManifestHelper.parseForData(project);
 
-			if (manifestParser != null) {
-				adtActivities = manifestParser.getActivities();
+			if (manifestData != null) {
+				adtActivities = manifestData.getActivities();
 			}
 
 			if ((adtActivities != null) && (adtActivities.length > 0)) {

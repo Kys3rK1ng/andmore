@@ -1036,7 +1036,7 @@ public class UiElementNode implements IPropertySource {
         if (document != null) {
             newLine = TextUtilities.getDefaultLineDelimiter(document);
         } else {
-            newLine = SdkUtils.getLineSeparator();
+            newLine = System.getProperty("line.separator");
         }
         Text indentNode = doc.createTextNode(newLine + indent);
         parentXmlNode.insertBefore(indentNode, xmlNextSibling);

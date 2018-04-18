@@ -752,13 +752,13 @@ public class TemplateHandlerTest extends SdkLoadingTestCase {
 		ensureNoBuildErrors(job, project);
 		System.out.println("Finished build error check");
 
-		System.out.println("Begin lint check");
-		ensureNoLintWarnings(job, project);
-		System.out.println("Finished lint check");
+		//System.out.println("Begin lint check");
+		//ensureNoLintWarnings(job, project);
+		//System.out.println("Finished lint check");
 
 		sCount++;
 	}
-
+/*
 	private void ensureNoLintWarnings(final Job job, IProject project) {
 		System.setProperty("com.android.tools.lint.bindir", AdtPrefs.getPrefs().getOsSdkFolder() + File.separator
 				+ FD_TOOLS);
@@ -848,7 +848,7 @@ public class TemplateHandlerTest extends SdkLoadingTestCase {
 		assertTrue(projectDir.getPath(), projectDir.isDirectory());
 		driver.analyze(Collections.singletonList(projectDir), Scope.ALL);
 	}
-
+*/
 	// Wait for test build support.
 	// This is copied from {@link SampleProjectTest}
 

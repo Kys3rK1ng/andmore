@@ -105,7 +105,7 @@ public class EclipseXmlPrettyPrinter extends XmlPrettyPrinter {
         org.eclipse.jface.text.Document blank = new org.eclipse.jface.text.Document();
         String lineSeparator = TextUtilities.getDefaultLineDelimiter(blank);
         if (lineSeparator == null) {
-            lineSeparator = SdkUtils.getLineSeparator();
+            lineSeparator = System.getProperty("line.separator");
         }
 
         return lineSeparator;

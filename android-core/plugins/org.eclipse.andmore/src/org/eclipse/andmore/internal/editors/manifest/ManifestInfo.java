@@ -40,12 +40,12 @@ import com.android.SdkConstants;
 import com.android.annotations.NonNull;
 import com.android.annotations.Nullable;
 import com.android.io.IAbstractFile;
-import com.android.io.StreamException;
 import com.android.resources.ScreenSize;
 import com.android.sdklib.IAndroidTarget;
 import com.android.utils.Pair;
 import com.android.xml.AndroidManifest;
-
+import com.android.ide.common.xml.AndroidManifestParser;
+import com.android.ide.common.xml.ManifestData;
 import org.eclipse.andmore.AndmoreAndroidPlugin;
 import org.eclipse.andmore.internal.project.BaseProjectHelper;
 import org.eclipse.andmore.internal.sdk.Sdk;
@@ -84,6 +84,7 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -95,7 +96,6 @@ import java.util.regex.Pattern;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.xpath.XPathExpressionException;
 
 /**
  * Retrieves and caches manifest information such as the themes to be used for
@@ -309,7 +309,7 @@ public class ManifestInfo {
 
         if (mManifestFile == null) {
             IFolderWrapper projectFolder = new IFolderWrapper(mProject);
-            mManifestFile = AndroidManifest.getManifest(projectFolder);
+            mManifestFile = projectFolder.getFile(SdkConstants.FN_ANDROID_MANIFEST_XML);
             if (mManifestFile == null) {
                 return;
             }
@@ -911,43 +911,31 @@ public class ManifestInfo {
     public static Pair<Integer, Integer> computeSdkVersions(IProject project) {
         int mMinSdkVersion = 1;
         int mTargetSdkVersion = 1;
-
-        IAbstractFile manifestFile = AndroidManifest.getManifest(new IFolderWrapper(project));
+        IFolderWrapper wrapper = new IFolderWrapper(project);
+        IAbstractFile manifestFile = wrapper.getFile(SdkConstants.FN_ANDROID_MANIFEST_XML);
         if (manifestFile != null) {
-            try {
-                Object value = AndroidManifest.getMinSdkVersion(manifestFile);
-                mMinSdkVersion = 1; // Default case if missing
-                if (value instanceof Integer) {
-                    mMinSdkVersion = ((Integer) value).intValue();
-                } else if (value instanceof String) {
-                    // handle codename, only if we can resolve it.
-                    if (Sdk.getCurrent() != null) {
-                        IAndroidTarget target = Sdk.getCurrent().getTargetFromHashString(
-                                "android-" + value); //$NON-NLS-1$
-                        if (target != null) {
-                            // codename future API level is current api + 1
-                            mMinSdkVersion = target.getVersion().getApiLevel() + 1;
-                        }
-                    }
-                }
-
-                value = AndroidManifest.getTargetSdkVersion(manifestFile);
-                if (value == null) {
-                    mTargetSdkVersion = mMinSdkVersion;
-                } else if (value instanceof String) {
-                    // handle codename, only if we can resolve it.
-                    if (Sdk.getCurrent() != null) {
-                        IAndroidTarget target = Sdk.getCurrent().getTargetFromHashString(
-                                "android-" + value); //$NON-NLS-1$
-                        if (target != null) {
-                            // codename future API level is current api + 1
-                        	mTargetSdkVersion = target.getVersion().getApiLevel() + 1;
-                        }
-                    }
-                }
-            } catch (StreamException e) {
-                // do nothing we'll use 1 below.
-            }
+                ManifestData manifestData = null;
+				try {
+					manifestData = AndroidManifestParser.parse(manifestFile);
+	                int minSdkVersion = manifestData.getMinSdkVersion();
+	                mMinSdkVersion = 1; // Default case if missing
+	                if (minSdkVersion != 0) 
+	                	mMinSdkVersion = minSdkVersion;
+	                else {
+	                    // handle codename, only if we can resolve it.
+	                	Sdk sdk = Sdk.getCurrent();
+	                    if (sdk != null) {
+	                        IAndroidTarget target = sdk.getTargetFromHashString(
+	                                "android-" + manifestData.getMinSdkVersionString()); //$NON-NLS-1$
+	                        if (target != null) {
+	                            // codename future API level is current api + 1
+	                            mMinSdkVersion = target.getVersion().getApiLevel() + 1;
+	                        }
+	                    }
+	                }
+	                mTargetSdkVersion = manifestData.getTargetSdkVersion();
+				} catch (IOException | SAXException e) {
+				}
         }
 
         return Pair.of(mMinSdkVersion, mTargetSdkVersion);

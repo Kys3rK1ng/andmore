@@ -376,7 +376,7 @@ public class AddSupportJarAction implements IObjectActionDelegate {
     private static File getSupportPackageDir() {
         final Sdk sdk = Sdk.getCurrent();
         if (sdk != null) {
-            LocalPackage pkg = sdk.getAndroidSdkHandler().getLatestLocalPackageForPrefix("extras;android;support", false, new FakeProgressIndicator());
+            LocalPackage pkg = sdk.getAndroidSdkHandler().getLatestLocalPackageForPrefix("extras;android;support", null, false, new FakeProgressIndicator());
             if (pkg != null) {
                 File supportPath = pkg.getLocation();
                 return supportPath;
@@ -385,7 +385,7 @@ public class AddSupportJarAction implements IObjectActionDelegate {
             // Check the old compatibility library. When the library is updated in-place
             // the manager doesn't change its folder name (since that is a source of
             // endless issues on Windows.)
-            pkg = sdk.getAndroidSdkHandler().getLatestLocalPackageForPrefix("extras;android;compatibility", false, new FakeProgressIndicator());
+            pkg = sdk.getAndroidSdkHandler().getLatestLocalPackageForPrefix("extras;android;compatibility", null, false, new FakeProgressIndicator());
             if (pkg != null) {
                 File supportPath = pkg.getLocation();
                 return supportPath;

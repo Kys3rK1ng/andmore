@@ -20,7 +20,6 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -71,7 +70,13 @@ import org.xml.sax.SAXException;
 
 import com.android.SdkConstants;
 import com.android.annotations.NonNull;
+import com.android.builder.core.DefaultManifestParser;
+import com.android.ide.common.symbols.RGeneration;
+import com.android.ide.common.symbols.SymbolIo;
+import com.android.ide.common.symbols.SymbolTable;
+import com.android.ide.common.xml.AndroidManifestParser;
 import com.android.ide.common.xml.ManifestData;
+import com.android.io.IAbstractFile;
 import com.android.io.StreamException;
 import com.android.manifmerger.ManifestMerger2;
 import com.android.manifmerger.ManifestMerger2.Invoker;
@@ -81,23 +86,16 @@ import com.android.manifmerger.MergingReport;
 import com.android.manifmerger.MergingReport.MergedManifestKind;
 import com.android.manifmerger.MergingReport.Record;
 import com.android.repository.Revision;
-import com.android.repository.io.FileOpUtils;
 import com.android.sdklib.AndroidVersion;
 import com.android.sdklib.BuildToolInfo;
 import com.android.sdklib.IAndroidTarget;
-import com.android.sdklib.build.RenderScriptChecker;
-import com.android.sdklib.build.RenderScriptProcessor;
-import com.android.sdklib.internal.build.BuildConfigGenerator;
-import com.android.builder.core.DefaultManifestParser;
-import com.android.builder.symbols.RGeneration;
-import com.android.builder.symbols.SymbolIo;
-import com.android.builder.symbols.SymbolTable;
+import com.android.sdklib.build.legacy.RenderScriptChecker;
+import com.android.sdklib.build.legacy.RenderScriptProcessor;
+import com.android.sdklib.build.legacy.BuildConfigGenerator;
 import com.android.sdklib.internal.project.ProjectProperties;
 import com.android.utils.Pair;
 import com.android.xml.AndroidManifest;
-import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Multimap;
 
 /**
  * Pre Java Compiler.
@@ -1080,7 +1078,10 @@ public class PreCompilerBuilder extends BaseBuilder {
                     try {
                         // get the package of the library, and if it's different form the
                         // main project, generate the R class for it too.
-                        String libJavaPackage = AndroidManifest.getPackage(new IFolderWrapper(lib));
+                    	IAbstractFile manifestFile = new IFolderWrapper(lib).getFile(SdkConstants.FN_ANDROID_MANIFEST_XML);
+                    	ManifestData mainifestData = AndroidManifestParser.parse(manifestFile);
+                    	
+                        String libJavaPackage = mainifestData.getPackage();
                         if (libJavaPackage.equals(javaPackage) == false) {
 
                             IFolder libOutput = BaseProjectHelper.getAndroidOutputFolder(lib);
@@ -1393,8 +1394,9 @@ public class PreCompilerBuilder extends BaseBuilder {
      * @throws MojoExecutionException
      * From Simpligility android-maven-plugin
      * @author William Ferguson - william.ferguson@xandar.com.au
+     * @throws IOException 
      */
-    public void generateLibraryRs(final File outputDirectory, final File genDirectory, final List<Pair<File, String>> libRFiles)
+    public void generateLibraryRs(final File outputDirectory, final File genDirectory, final List<Pair<File, String>> libRFiles) throws IOException
     {
         // list of all the symbol tables
         final List<SymbolTable> symbolTables = new ArrayList<SymbolTable>(libRFiles.size());
@@ -1406,8 +1408,7 @@ public class PreCompilerBuilder extends BaseBuilder {
             	File unpackedLibDirectory = rFile.getParentFile();
                 final File libManifestFile = new File(unpackedLibDirectory, "AndroidManifest.xml");
                 final String packageName = new DefaultManifestParser(libManifestFile).getPackage();
-                SymbolTable libSymbols = SymbolIo.read(rFile);
-                libSymbols = libSymbols.rename(packageName, libSymbols.getTableName());
+                SymbolTable libSymbols = SymbolIo.read(rFile, packageName);
                 symbolTables.add(libSymbols);
             }
         }
@@ -1415,7 +1416,7 @@ public class PreCompilerBuilder extends BaseBuilder {
         if (!symbolTables.isEmpty()) {
             // load the full resources values from the R.txt calculated for the project.
             final File projectR = new File(outputDirectory, "R.txt");
-            final SymbolTable mainSymbols = SymbolIo.read(projectR);
+            final SymbolTable mainSymbols = SymbolIo.read(projectR, null);
 
             // now loop on all the package name, merge all the symbols to write, and write them
             RGeneration.generateRForLibraries(mainSymbols, symbolTables, genDirectory.getAbsoluteFile(), false);

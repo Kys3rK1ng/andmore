@@ -22,11 +22,12 @@ import com.android.annotations.Nullable;
 import com.android.tools.lint.checks.DuplicateIdDetector;
 import com.android.tools.lint.checks.UnusedResourceDetector;
 import com.android.tools.lint.client.api.Configuration;
-import com.android.tools.lint.client.api.JavaParser;
 import com.android.tools.lint.client.api.LintClient;
+import com.android.tools.lint.client.api.UastParser;
 import com.android.tools.lint.client.api.XmlParser;
 import com.android.tools.lint.detector.api.Context;
 import com.android.tools.lint.detector.api.Issue;
+import com.android.tools.lint.detector.api.LintFix;
 import com.android.tools.lint.detector.api.Location;
 import com.android.tools.lint.detector.api.Project;
 import com.android.tools.lint.detector.api.Severity;
@@ -34,7 +35,6 @@ import com.android.tools.lint.detector.api.TextFormat;
 
 import org.eclipse.andmore.internal.editors.layout.refactoring.AdtProjectTest;
 import org.eclipse.core.resources.IProject;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -199,12 +199,18 @@ public class ProjectLintConfigurationTest extends AdtProjectTest {
 
 	private static class TestClient extends LintClient {
 		@Override
-		public void report(@NonNull Context context, @NonNull Issue issue, @NonNull Severity severity,
-				@Nullable Location location, @NonNull String message, @Nullable TextFormat data) {
+	    public void report(
+	            Context context,
+	            Issue issue,
+	            Severity severity,
+	            Location location,
+	            String message,
+	            TextFormat format,
+	            LintFix fix) {
 		}
 
 		@Override
-		public void log(@NonNull Severity severity, @Nullable Throwable exception, @Nullable String format,
+		public void log(Severity severity, @Nullable Throwable exception, @Nullable String format,
 				@Nullable Object... args) {
 		}
 
@@ -214,13 +220,14 @@ public class ProjectLintConfigurationTest extends AdtProjectTest {
 		}
 
 		@Override
-		public @NonNull String readFile(@NonNull File file) {
-			return null;
+		public @NonNull CharSequence readFile(File file) {
+			return "";
 		}
 
 		@Override
-		public JavaParser getJavaParser(@Nullable Project project) {
+		public UastParser getUastParser(Project arg0) {
 			return null;
 		}
+
 	}
 }

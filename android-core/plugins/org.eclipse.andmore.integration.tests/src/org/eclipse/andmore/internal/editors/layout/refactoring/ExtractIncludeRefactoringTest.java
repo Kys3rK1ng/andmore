@@ -27,6 +27,7 @@ import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.jface.preference.IPreferenceStore;
 import org.eclipse.ltk.core.refactoring.Change;
 import org.eclipse.ltk.core.refactoring.TextFileChange;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.w3c.dom.Element;
 
@@ -109,6 +110,7 @@ public class ExtractIncludeRefactoringTest extends RefactoringTest {
 		checkRefactoring("sample7.xml", "newlayout6", true, extraFiles, 4, true /* diffs */, "@+id/linearLayout4");
 	}
 
+	@Ignore
 	@Test
 	public void testExtract7() throws Exception {
 		// Tests extracting from multiple files where the layouts are completely
