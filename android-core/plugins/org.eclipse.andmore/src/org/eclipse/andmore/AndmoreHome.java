@@ -27,7 +27,7 @@ import com.android.utils.ILogger;
  * on the filesystem as opposed to being packaged in a plugin. Created to deploy desugur tool.
  */
 public class AndmoreHome {
-    private final static String ANDMORE_HOME_PATH = ".andmore";
+    private final static String ANDMORE_HOME_PATH = "andmore";
 
 	private static final String ANDMORE_HOME_ERROR = "Error creating Andmore home directory %s";
 
